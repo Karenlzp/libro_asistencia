@@ -109,7 +109,7 @@
         <div className="card section" style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{
             width: 60, height: 60, borderRadius: '50%',
-            background: 'var(--lime)', display: 'flex',
+background: 'var(--blue-light)', display: 'flex',
             alignItems: 'center', justifyContent: 'center',
             fontSize: '1.6rem', flexShrink: 0,
             }}>
@@ -119,7 +119,7 @@
             <div style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--navy)' }}>
                 {perfil?.nombre}
             </div>
-            <div style={{ color: 'var(--muted)', fontSize: '.82rem', marginTop: 3 }}>
+<div style={{ color: 'var(--gray-500)', fontSize: '.82rem', marginTop: 3 }}>
                 {perfil?.cursos
                 ? `Curso ${perfil.cursos.nivel}°${perfil.cursos.letra}`
                 : 'Sin curso asignado'}
@@ -133,7 +133,7 @@
                 }}>
                 {promedio ?? '—'}
                 </div>
-                <div style={{ fontSize: '.72rem', color: 'var(--muted)' }}>Promedio</div>
+<div style={{ fontSize: '.72rem', color: 'var(--gray-500)' }}>Promedio</div>
             </div>
             <div style={{ textAlign: 'center' }}>
                 <div style={{
@@ -142,13 +142,13 @@
                 }}>
                 {pctAsistencia !== null ? pctAsistencia + '%' : '—'}
                 </div>
-                <div style={{ fontSize: '.72rem', color: 'var(--muted)' }}>Asistencia</div>
+<div style={{ fontSize: '.72rem', color: 'var(--gray-500)' }}>Asistencia</div>
             </div>
             <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--navy)' }}>
                 {notas.length}
                 </div>
-                <div style={{ fontSize: '.72rem', color: 'var(--muted)' }}>Evaluaciones</div>
+<div style={{ fontSize: '.72rem', color: 'var(--gray-500)' }}>Evaluaciones</div>
             </div>
             </div>
         </div>
@@ -470,7 +470,7 @@
                     <div style={{ fontSize: '.85rem', color: 'var(--navy)', marginBottom: 6 }}>
                         {o.contenido}
                     </div>
-                    <div style={{ fontSize: '.75rem', color: 'var(--muted)' }}>
+<div style={{ fontSize: '.75rem', color: 'var(--gray-500)' }}>
                         {o.usuarios?.nombre ?? '—'} · {o.fecha}
                     </div>
                     </div>
