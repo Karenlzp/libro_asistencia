@@ -24,15 +24,23 @@
         return
         }
 
-        // 2. Obtener perfil y redirigir
+        // 2. Obtener perfil y validar activo
         const { data: perfil, error: perfilError } = await supabase
         .from('usuarios')
-        .select('rol')
+        .select('rol, activo')
         .eq('id', data.user.id)
         .single()
 
         if (perfilError || !perfil?.rol) {
         setError('Tu usuario no tiene un perfil configurado. Contacta al administrador.')
+        setLoading(false)
+        return
+        }
+
+        if (perfil.activo === false) {
+        // Deshabilitado: cerrar sesión y mostrar mensaje
+        await supabase.auth.signOut()
+        setError('Tu cuenta fue deshabilitada.')
         setLoading(false)
         return
         }

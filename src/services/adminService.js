@@ -175,6 +175,27 @@ export async function desactivarUsuario(id) {
   return { error }
 }
 
+// ── Lista de usuarios deshabilitados ─────────────────────────────────────
+export async function getUsuariosInactivos() {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select(`id, nombre, rol, activo, created_at, cursos ( nivel, letra )`)
+    .eq('activo', false)
+    .order('rol')
+    .order('nombre')
+  return { data, error }
+}
+
+// ── Re-activar usuario ────────────────────────────────────────────────────
+export async function reactivarUsuario(id) {
+  const { error } = await supabase
+    .from('usuarios')
+    .update({ activo: true })
+    .eq('id', id)
+  return { error }
+}
+
+
 // ── Modificar nota (admin) ────────────────────────────────────────────────────
 export async function modificarNota({ detalleNotaId, nota }) {
   const { data, error } = await supabase

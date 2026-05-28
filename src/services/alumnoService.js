@@ -22,7 +22,7 @@ export async function getNotasAlumno(alumnoId) {
       nota,
       evaluaciones (
         id, nombre, porcentaje, fecha,
-        asignaturas ( nombre ),
+        asignaturas ( id, nombre ),
         cursos      ( nivel, letra )
       )
     `)
@@ -31,7 +31,8 @@ export async function getNotasAlumno(alumnoId) {
   return { data, error }
 }
 
-// ── Asistencia del alumno ─────────────────────────────────────────────────────
+
+// ── Asistencia del alumno (todas / sin filtrar por asignatura) ─────────────
 export async function getAsistenciaAlumno(alumnoId) {
   const { data, error } = await supabase
     .from('asistencia')
@@ -40,6 +41,17 @@ export async function getAsistenciaAlumno(alumnoId) {
     .order('fecha', { ascending: false })
   return { data, error }
 }
+
+// ── Asistencia del alumno por asignatura (vía vista v_asistencia_alumno) ──
+export async function getAsistenciaAlumnoPorAsignatura(alumnoId) {
+  const { data, error } = await supabase
+    .from('v_asistencia_alumno')
+    .select('alumno_id, curso_id, asignatura_id, asignatura, fecha, estado')
+    .eq('alumno_id', alumnoId)
+    .order('fecha', { ascending: false })
+  return { data, error }
+}
+
 
 // ── Anotaciones del alumno ────────────────────────────────────────────────────
 export async function getAnotacionesAlumno(alumnoId) {
