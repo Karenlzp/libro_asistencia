@@ -1,5 +1,7 @@
-    // src/pages/profesor/profesor_Dashboard.jsx
-    import { useEffect, useMemo, useState } from 'react'
+// src/pages/profesor/profesor_Dashboard.jsx
+import { useEffect, useMemo, useState } from 'react'
+
+
     import {
     getProfesorCursos,
     getAlumnosPorCurso,
@@ -16,11 +18,7 @@
     crearObservacion,
     } from '../../services/profesorService'
 
-    function getNotaClass(nota) {
-    if (nota >= 5.5) return 'alta'
-    if (nota >= 4.0) return 'media'
-    return 'baja'
-    }
+
 
     const hoy = new Date().toISOString().slice(0, 10)
 
@@ -55,10 +53,12 @@
     useEffect(() => {
         if (!profile?.id) return
         loadBase()
-    }, [profile])
+    }, [profile?.id])
 
     const loadBase = async () => {
+
         setLoading(true)
+
         const [ca, ev, an] = await Promise.all([
         getProfesorCursos(profile.id),
         getEvaluacionesProfesor(profile.id),

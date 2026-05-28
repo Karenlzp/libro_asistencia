@@ -11,8 +11,12 @@ import NotFound from './pages/NotFound'
 
 // Páginas por rol (las iremos creando paso a paso)
 import AdminDashboard    from './pages/admin/admin_Dashboard'
+import AdminProfesores   from './pages/admin/AdminProfesores'
 import ProfesorDashboard from './pages/profesor/profesor_Dashboard'
 import AlumnoDashboard   from './pages/alumno/alumno_Dashboard'
+
+import PieDashboard      from './pages/pie/pie_Dashboard'
+import PieAlumnoDetalle from './pages/pie/pie_AlumnoDetalle'
 
 // Guards
 import ProtectedRoute from './components/ProtectedRoute'
@@ -21,12 +25,18 @@ export default function App() {
   const [session, setSession] = useState(undefined) // undefined = cargando
   const [profile, setProfile] = useState(null)
 
+  // PIE pages
+  // (import deferred below to keep file edits localized)
+
+
   useEffect(() => {
     // Sesión inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       if (session) loadProfile(session.user.id)
     })
+
+
 
     // Escuchar cambios de sesión (login / logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -87,6 +97,18 @@ export default function App() {
           }
         />
 
+        <Route
+          path="/admin/profesores"
+          element={
+            <ProtectedRoute session={session} profile={profile} requiredRole="admin">
+              <DashboardLayout profile={profile}>
+                <AdminProfesores profile={profile} />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+
         {/* ── Rutas protegidas Profesor ── */}
         <Route
           path="/profesor"
@@ -106,6 +128,29 @@ export default function App() {
             <ProtectedRoute session={session} profile={profile} requiredRole="alumno">
               <DashboardLayout profile={profile}>
                 <AlumnoDashboard profile={profile} />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Rutas protegidas PIE ── */}
+        <Route
+          path="/pie/dashboard"
+          element={
+            <ProtectedRoute session={session} profile={profile} requiredRole="pie">
+              <DashboardLayout profile={profile}>
+                <PieDashboard profile={profile} />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/pie/alumno/:id"
+          element={
+            <ProtectedRoute session={session} profile={profile} requiredRole="pie">
+              <DashboardLayout profile={profile}>
+                <PieAlumnoDetalle profile={profile} />
               </DashboardLayout>
             </ProtectedRoute>
           }
@@ -132,6 +177,6 @@ export default function App() {
 // Devuelve la ruta de inicio según el rol del perfil
 function getRutaInicio(profile) {
   if (!profile) return '/login'
-  const rutas = { admin: '/admin', profesor: '/profesor', alumno: '/alumno' }
+  const rutas = { admin: '/admin', profesor: '/profesor', alumno: '/alumno', pie: '/pie/dashboard' }
   return rutas[profile.rol] ?? '/login'
 }

@@ -3,10 +3,18 @@
     import { supabase } from '../supabaseClient'
 
     const NAV = {
-    admin:    [{ to: '/admin',    label: '🏠 Inicio' }],
+    admin:    [
+      { to: '/admin', label: '🏠 Inicio' },
+      { to: '/admin/profesores', label: '👨‍🏫 Profesores' },
+    ],
     profesor: [{ to: '/profesor', label: '🏠 Inicio' }],
     alumno:   [{ to: '/alumno',   label: '🏠 Inicio' }],
+    pie:       [
+      { to: '/pie/dashboard', label: '🧩 PIE' },
+    ],
+
     }
+
 
     export default function DashboardLayout({ profile, children }) {
     const handleSignOut = async () => {

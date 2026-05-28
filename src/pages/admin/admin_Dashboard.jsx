@@ -1,11 +1,13 @@
 // src/pages/admin/admin_Dashboard.jsx
 import { useEffect, useState } from 'react'
+
+
 import {
   getAlertas, getResumen, getUsuarios, getCursos,
   getAsignaturas, getAsignaciones, getHojaVidaAlumno,
   crearCurso, eliminarCurso, crearAsignatura,
   asignarProfesor, eliminarAsignacion,
-  desactivarUsuario, modificarNota,
+  desactivarUsuario, getUsuariosInactivos, reactivarUsuario, modificarNota,
   crearAnotacionAdmin, cambiarCursoAlumno,
 } from '../../services/adminService'
 
@@ -34,8 +36,10 @@ export default function AdminDashboard({ profile }) {
   const [asignaciones, setAsignaciones] = useState([])
   const [loading, setLoading]           = useState(true)
   const [status, setStatus]             = useState(null)
+  const [usuariosInactivos, setUsuariosInactivos] = useState([])
 
   // Hoja de vida
+
   const [alumnoSel, setAlumnoSel]       = useState(null)
   const [hojaVida, setHojaVida]         = useState(null)
   const [loadingHoja, setLoadingHoja]   = useState(false)
@@ -60,22 +64,30 @@ export default function AdminDashboard({ profile }) {
   // Cambio de curso
   const [cursoCambio, setCursoCambio]   = useState('')
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    if (!profile?.id) return
+    loadData()
+  }, [profile?.id])
 
   const loadData = async () => {
+
     setLoading(true)
-    const [res, ale, usu, cur, asi, asgn] = await Promise.all([
+    const [res, ale, usu, cur, asi, asgn, usuInactivos] = await Promise.all([
       getResumen(), getAlertas(), getUsuarios(),
       getCursos(), getAsignaturas(), getAsignaciones(),
+      getUsuariosInactivos(),
     ])
     setResumen(res)
     setAlertas(ale.data ?? [])
     setUsuarios(usu.data ?? [])
+    setUsuariosInactivos(usuInactivos.data ?? [])
     setCursos(cur.data ?? [])
+
     setAsignaturas(asi.data ?? [])
     setAsignaciones(asgn.data ?? [])
     setLoading(false)
   }
+
 
   const notify = (type, msg) => {
     setStatus({ type, msg })
@@ -171,10 +183,10 @@ export default function AdminDashboard({ profile }) {
 
   // ── Desactivar usuario ────────────────────────────────────────────────────
   const handleDesactivar = async (u) => {
-    if (!confirm(`¿Eliminar a ${u.nombre} de la plataforma? Esta acción no se puede deshacer.`)) return
+    if (!confirm(`¿Deshabilitar a ${u.nombre}? No se puede deshacer.`)) return
     const { error } = await desactivarUsuario(u.id)
     if (error) return notify('error', error.message)
-    notify('success', `${u.nombre} eliminado de la plataforma.`)
+    notify('success', 'Usuario deshabilitado correctamente.')
     await loadData()
   }
 
@@ -229,6 +241,7 @@ export default function AdminDashboard({ profile }) {
   if (loading) return <div className="loading-wrap"><div className="spinner" /> Cargando panel...</div>
 
   return (
+
     <div>
       {/* Stats */}
       <div className="grid-4 section">
@@ -253,6 +266,8 @@ export default function AdminDashboard({ profile }) {
         {[
           { key: 'alertas',  label: `Alertas (${alertas.length})` },
           { key: 'usuarios', label: 'Usuarios' },
+          { key: 'usuarios_inactivos', label: 'Usuarios deshabilitados' },
+
           { key: 'cursos',   label: 'Cursos y asignaturas' },
           { key: 'asignar',  label: 'Asignar profesor' },
           { key: 'hoja',     label: 'Hoja de vida' },
@@ -337,8 +352,53 @@ export default function AdminDashboard({ profile }) {
               <thead>
                 <tr><th>Nombre</th><th>Rol</th><th>Curso</th><th>Registrado</th><th></th><th></th></tr>
               </thead>
-              <tbody>
+                  <tbody>
                 {usuarios.map(u => (
+                  <tr key={u.id}>
+                    <td><strong>{u.nombre}</strong></td>
+                    <td><span className="badge default">{u.rol}</span></td>
+                    <td>{u.cursos ? `${u.cursos.nivel}°${u.cursos.letra}` : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                    <td style={{ color: 'var(--gray-500)', fontSize: '.78rem' }}>
+                      {new Date(u.created_at).toLocaleDateString('es-CL')}
+                    </td>
+                    <td>
+                      {u.rol === 'alumno' && (
+                        <button className="button ghost" style={{ fontSize: '.75rem', padding: '4px 10px' }}
+                          onClick={() => handleVerHoja(u)}>
+                          Ver hoja
+                        </button>
+                      )}
+                    </td>
+                    <td>
+                        <button
+                        className="button ghost"
+                        style={{ fontSize: '.75rem', padding: '4px 10px', color: 'var(--danger)', borderColor: 'var(--danger-border)' }}
+                        onClick={() => handleDesactivar(u)}>
+                        Deshabilitar
+                        </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Usuarios deshabilitados ── */}
+      {tab === 'usuarios_inactivos' && (
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">Usuarios deshabilitados</div>
+            <div className="card-subtitle">{usuariosInactivos.length} usuarios deshabilitados</div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Nombre</th><th>Rol</th><th>Curso</th><th>Registrado</th><th></th><th></th></tr>
+              </thead>
+              <tbody>
+                {usuariosInactivos.map(u => (
                   <tr key={u.id}>
                     <td><strong>{u.nombre}</strong></td>
                     <td><span className="badge default">{u.rol}</span></td>
@@ -357,9 +417,15 @@ export default function AdminDashboard({ profile }) {
                     <td>
                       <button
                         className="button ghost"
-                        style={{ fontSize: '.75rem', padding: '4px 10px', color: 'var(--danger)', borderColor: 'var(--danger-border)' }}
-                        onClick={() => handleDesactivar(u)}>
-                        Eliminar
+                        style={{ fontSize: '.75rem', padding: '4px 10px', color: 'var(--success)', borderColor: 'var(--success-border)' }}
+                        onClick={async () => {
+                          if (!confirm(`¿Reactivar a ${u.nombre}?`)) return
+                          const { error } = await reactivarUsuario(u.id)
+                          if (error) return notify('error', error.message)
+                          notify('success', 'Usuario reactivado correctamente.')
+                          await loadData()
+                        }}>
+                        Reactivar
                       </button>
                     </td>
                   </tr>
