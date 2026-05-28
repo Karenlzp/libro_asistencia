@@ -17,8 +17,10 @@ export default function DashboardLayout({ profile, children }) {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
+    // Asegura que React Router haga la navegación con sesión ya invalidada.
     navigate('/login', { replace: true })
   }
+
 
   const links = NAV[profile?.rol] ?? []
 

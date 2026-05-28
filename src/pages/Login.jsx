@@ -15,40 +15,47 @@
         setError(null)
         setLoading(true)
 
+        try {
         // 1. Autenticar
         const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
         if (authError) {
-        setError('Correo o contraseña incorrectos.')
-        setLoading(false)
-        return
+            setError('Correo o contraseña incorrectos.')
+            setLoading(false)
+            return
         }
 
         // 2. Obtener perfil y validar activo
         const { data: perfil, error: perfilError } = await supabase
-        .from('usuarios')
-        .select('rol, activo')
-        .eq('id', data.user.id)
-        .single()
+            .from('usuarios')
+            .select('rol, activo')
+            .eq('id', data.user.id)
+            .single()
 
         if (perfilError || !perfil?.rol) {
-        setError('Tu usuario no tiene un perfil configurado. Contacta al administrador.')
-        setLoading(false)
-        return
+            setError('Tu usuario no tiene un perfil configurado. Contacta al administrador.')
+            setLoading(false)
+            return
         }
 
         if (perfil.activo === false) {
-        // Deshabilitado: cerrar sesión y mostrar mensaje
-        await supabase.auth.signOut()
-        setError('Tu cuenta fue deshabilitada.')
-        setLoading(false)
-        return
+            // Deshabilitado: cerrar sesión y mostrar mensaje
+            await supabase.auth.signOut()
+            setError('Tu cuenta fue deshabilitada.')
+            setLoading(false)
+            return
         }
 
-        const rutas = { admin: '/admin', profesor: '/profesor', alumno: '/alumno' }
+        // Nota: incluye PIE para que el redirect inicial funcione igual en prod.
+        const rutas = { admin: '/admin', profesor: '/profesor', alumno: '/alumno', pie: '/pie/dashboard' }
         navigate(rutas[perfil.rol] ?? '/login', { replace: true })
         setLoading(false)
+        } catch (err) {
+        setError('Ocurrió un error inesperado. Intenta nuevamente.')
+        setLoading(false)
+        }
     }
+
 
     return (
         <div className="login-shell">

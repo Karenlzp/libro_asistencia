@@ -1,16 +1,11 @@
-# TODO - Dashboard alumno por asignatura
+# TODO
 
-- [ ] Revisar `src/pages/alumno/alumno_Dashboard.jsx` y `src/services/alumnoService.js` para identificar dónde se aplica el filtro y dónde no.
-- [ ] Actualizar `getNotasAlumno` para que incluya `evaluaciones.asignaturas.id` (además de nombre).
-- [ ] Cambiar el estado `asignaturaSel` para que filtre por `asignatura_id` (y mantener opción `todas`).
-- [ ] Asegurar que el filtro afecte:
-  - [ ] Render de tab “📘 Notas” (usar `notasFiltradas`).
-  - [ ] Render de tab “📅 Asistencia” (usar `asistenciaFiltrada`).
-- [ ] Header / resumen (promedio y asistencia deben usar valores filtrados).
-- [ ] Sección de “Promedio por asignatura” (mostrar solo la asignatura seleccionada cuando aplique).
-- [ ] Alertas (ya usan filtrado parcial; ajustar para cobertura total).
-
-- [x] Verificar que “anotaciones” sigan siendo globales (sin filtrarlas por asignatura).
-- [ ] Ejecutar `npm run dev` y comprobar el comportamiento en UI.
-
+- [x] Revisar rutas React Router y ProtectedRoute en el repo.
+- [x] Crear `vercel.json` con rewrite SPA para servir siempre `index.html`.
+- [x] Ajustar redirect inicial de login para incluir rol `pie`.
+- [x] Hacer `logout`/navegación estable (dejar sesión invalidada antes de navegar).
+- [x] Corregir `ProtectedRoute` para roles incluyendo `pie`.
+- [ ] Probar en Vercel: abrir directo `/admin`, `/profesor`, `/alumno`, `/pie/dashboard`.
+- [ ] Probar logout: navegar a `/login` sin 404.
+- [ ] Si persiste 404, validar configuración `buildCommand` y `outputDirectory` en Vercel.
 
