@@ -45,22 +45,35 @@ export async function getAlumnoPieDetail(alumnoId) {
 export async function getObservacionesPie(alumnoId) {
   const { data, error } = await supabase
     .from('pie_observaciones')
-    .select('id, observacion, created_at, alumno_id')
+    .select('id, tipo_intervencion, observacion, resultado, created_at, alumno_id')
     .eq('alumno_id', alumnoId)
     .order('created_at', { ascending: false })
 
   return { data, error }
 }
 
-export async function createObservacionPie({ alumnoId, pieId, observacion }) {
+export async function createObservacionPie({
+  alumnoId,
+  pieId,
+  tipoIntervencion,
+  observacion,
+  resultado,
+}) {
   const { data, error } = await supabase
     .from('pie_observaciones')
-    .insert({ alumno_id: alumnoId, pie_id: pieId, observacion })
+    .insert({
+      alumno_id: alumnoId,
+      pie_id: pieId,
+      tipo_intervencion: tipoIntervencion,
+      observacion,
+      resultado,
+    })
     .select()
     .single()
 
   return { data, error }
 }
+
 
 // ── Retiros PIE ───────────────────────────────────────────────────────────
 export async function getRetirosPie(alumnoId) {
@@ -88,6 +101,7 @@ export async function createRetiroPie({ alumnoId, cursoId, pieId, motivo, tipo }
 
 export async function registrarRetornoPie(retiroId) {
   console.log('retiroId', retiroId)
+
 
   if (!retiroId || typeof retiroId !== 'string') {
     return { data: null, error: { message: 'Retiro inválido.' } }

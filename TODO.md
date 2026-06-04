@@ -1,13 +1,19 @@
-# TODO
-- [x] Agregar función registrarRetornoPie en src/services/pieService.js.
+# TODO — Informes Internos PIE (React + Supabase)
 
-- [ ] Actualizar src/pages/pie/pie_AlumnoDetalle.jsx para:
-  - [x] Importar registrarRetornoPie.
-  - [x] Crear handleRegistrarRetorno.
-  - [x] Mostrar columnas Fecha/Hora Retorno en tabla de retiros.
-  - [x] Mostrar botón Registrar retorno solo si estado === 'activo'.
-  - [x] Si estado === 'retornado', mostrar insignia 'Retornado' (sin botón).
-  - [x] Al registrar retorno: actualizar, refrescar lista y mostrar mensaje success.
+- [ ] Paso 1: Agregar backend en `src/services/pieService.js`
+  - [ ] getInformesPie(alumnoId)
+  - [ ] uploadInformePie(file, alumnoId) -> upload a bucket `pie-informes`, path único, obtener signed URL (temporal) para usar en UI y/o para guardar, pero guardar solo path en DB.
+  - [ ] createInformePie(...) -> insertar en `pie_informes` (guardar alumno_id, pie_id, titulo, descripcion, archivo_url=path, nombre_archivo)
+  - [ ] getInformeUrl(path) -> generar signed URL en tiempo real
 
-- [ ] Verificar que no se rompa el módulo PIE existente (retiros/observaciones).
+- [ ] Paso 2: Actualizar frontend en `src/pages/pie/pie_AlumnoDetalle.jsx`
+  - [ ] Agregar nueva pestaña `Informes` manteniendo `Observaciones` y `Retiros` sin cambios
+  - [ ] Agregar formulario (título, descripción, file) con validaciones
+  - [ ] Implementar carga: upload -> signed URL -> createInformePie -> recargar listado
+  - [ ] Implementar listado: mostrar Título, Descripción, Fecha, Archivo
+  - [ ] Implementar botones: `Ver informe` (abrir en nueva pestaña con URL firmada), `Descargar` (download desde URL firmada)
+
+- [ ] Paso 3: Verificar que errores de Supabase muestren `error.message` en la alerta existente del módulo PIE.
+
+- [ ] Paso 4: Ejecutar `npm run build` o `npm run lint` para asegurar que no se rompa el proyecto.
 

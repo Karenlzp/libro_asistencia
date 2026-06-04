@@ -13,6 +13,7 @@ import NotFound from './pages/NotFound'
 import AdminDashboard    from './pages/admin/admin_Dashboard'
 import AdminProfesores   from './pages/admin/AdminProfesores'
 import ProfesorDashboard from './pages/profesor/profesor_Dashboard'
+import ProfesorNuevaEvaluacion from './pages/profesor/ProfesorNuevaEvaluacion'
 import AlumnoDashboard   from './pages/alumno/alumno_Dashboard'
 
 import PieDashboard      from './pages/pie/pie_Dashboard'
@@ -120,6 +121,18 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/profesor/nueva-evaluacion"
+          element={
+            <ProtectedRoute session={session} profile={profile} requiredRole="profesor">
+              <DashboardLayout profile={profile}>
+                <ProfesorNuevaEvaluacion profile={profile} />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
 
         {/* ── Rutas protegidas Alumno ── */}
         <Route

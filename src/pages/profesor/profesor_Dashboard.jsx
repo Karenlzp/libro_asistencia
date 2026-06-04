@@ -307,7 +307,6 @@ import { useEffect, useMemo, useState } from 'react'
             {[
             { key: 'notas',       label: 'Notas' },
             { key: 'asistencia',  label: 'Asistencia' },
-            { key: 'evaluacion',  label: 'Nueva evaluación' },
             { key: 'anotaciones', label: 'Anotaciones' },
             { key: 'retiros',     label: 'Retiros' },
             { key: 'observacion', label: 'Observaciones' },
@@ -317,6 +316,7 @@ import { useEffect, useMemo, useState } from 'react'
             </button>
             ))}
         </div>
+
 
         {status && <div className={`alert ${status.type}`} style={{ marginBottom: 16 }}>{status.msg}</div>}
 
@@ -503,48 +503,7 @@ import { useEffect, useMemo, useState } from 'react'
             </div>
         )}
 
-        {/* Tab: Nueva evaluación */}
-        {tab === 'evaluacion' && (
-            <div className="card">
-            <div className="card-header"><div className="card-title">Crear evaluación</div></div>
-            <form className="form-grid" onSubmit={handleCrearEval}>
-                <div className="form-group">
-                <label className="form-label">Curso</label>
-                <select className="form-select" value={cursoId}
-                    onChange={e => handleCursoChange(e.target.value)} required>
-                    <option value="">Elegir curso</option>
-                    {cursoList.map(c => <option key={c.id} value={c.id}>{c.nivel}°{c.letra}</option>)}
-                </select>
-                </div>
-                <div className="form-group">
-                <label className="form-label">Asignatura</label>
-                <select className="form-select" value={asignaturaId}
-                    onChange={e => setAsignaturaId(e.target.value)} disabled={!cursoId} required>
-                    <option value="">Elegir asignatura</option>
-                    {asignaturasDelCurso.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                </select>
-                </div>
-                <div className="form-group">
-                <label className="form-label">Nombre</label>
-                <input className="form-input" placeholder="Ej: Prueba 1 — Unidad 2"
-                    value={evalForm.nombre} onChange={e => setEvalForm(p => ({ ...p, nombre: e.target.value }))} required />
-                </div>
-                <div className="form-group">
-                <label className="form-label">Porcentaje (%)</label>
-                <input className="form-input" type="number" min="1" max="100"
-                    value={evalForm.porcentaje} onChange={e => setEvalForm(p => ({ ...p, porcentaje: e.target.value }))} required />
-                </div>
-                <div className="form-group">
-                <label className="form-label">Fecha</label>
-                <input className="form-input" type="date"
-                    value={evalForm.fecha} onChange={e => setEvalForm(p => ({ ...p, fecha: e.target.value }))} required />
-                </div>
-                <div className="form-actions">
-                <button className="button primary" type="submit">Crear evaluación</button>
-                </div>
-            </form>
-            </div>
-        )}
+
 
         {/* Tab: Anotaciones */}
         {tab === 'anotaciones' && (
