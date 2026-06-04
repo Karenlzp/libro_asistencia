@@ -1,11 +1,13 @@
 # TODO
+- [x] Agregar función registrarRetornoPie en src/services/pieService.js.
 
-- [x] Revisar rutas React Router y ProtectedRoute en el repo.
-- [x] Crear `vercel.json` con rewrite SPA para servir siempre `index.html`.
-- [x] Ajustar redirect inicial de login para incluir rol `pie`.
-- [x] Hacer `logout`/navegación estable (dejar sesión invalidada antes de navegar).
-- [x] Corregir `ProtectedRoute` para roles incluyendo `pie`.
-- [ ] Probar en Vercel: abrir directo `/admin`, `/profesor`, `/alumno`, `/pie/dashboard`.
-- [ ] Probar logout: navegar a `/login` sin 404.
-- [ ] Si persiste 404, validar configuración `buildCommand` y `outputDirectory` en Vercel.
+- [ ] Actualizar src/pages/pie/pie_AlumnoDetalle.jsx para:
+  - [x] Importar registrarRetornoPie.
+  - [x] Crear handleRegistrarRetorno.
+  - [x] Mostrar columnas Fecha/Hora Retorno en tabla de retiros.
+  - [x] Mostrar botón Registrar retorno solo si estado === 'activo'.
+  - [x] Si estado === 'retornado', mostrar insignia 'Retornado' (sin botón).
+  - [x] Al registrar retorno: actualizar, refrescar lista y mostrar mensaje success.
+
+- [ ] Verificar que no se rompa el módulo PIE existente (retiros/observaciones).
 

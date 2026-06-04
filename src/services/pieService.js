@@ -66,12 +66,15 @@ export async function createObservacionPie({ alumnoId, pieId, observacion }) {
 export async function getRetirosPie(alumnoId) {
   const { data, error } = await supabase
     .from('pie_retiros')
-    .select('id, motivo, tipo, estado, created_at, alumno_id, curso_id, pie_id')
+    .select(
+      'id, motivo, tipo, estado, created_at, fecha_retorno, hora_retorno, alumno_id, curso_id, pie_id'
+    )
     .eq('alumno_id', alumnoId)
     .order('created_at', { ascending: false })
 
   return { data, error }
 }
+
 
 export async function createRetiroPie({ alumnoId, cursoId, pieId, motivo, tipo }) {
   const { data, error } = await supabase
@@ -82,4 +85,61 @@ export async function createRetiroPie({ alumnoId, cursoId, pieId, motivo, tipo }
 
   return { data, error }
 }
+
+export async function registrarRetornoPie(retiroId) {
+  console.log('retiroId', retiroId)
+
+  if (!retiroId || typeof retiroId !== 'string') {
+    return { data: null, error: { message: 'Retiro inválido.' } }
+  }
+
+  // Validación básica UUID v4/v1 (sin depender del backend)
+  const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  if (!uuidLike.test(retiroId)) {
+    return { data: null, error: { message: 'Retiro inválido.' } }
+  }
+
+  const ahora = new Date()
+
+  // 1) Verificar que el retiro existe y traer estado (evita update “vacío”)
+  const { data: existsData, error: existsError } = await supabase
+    .from('pie_retiros')
+    .select('id, estado')
+    .eq('id', retiroId)
+    .maybeSingle()
+
+  if (existsError) {
+    console.log('resultado retorno - existsError', existsData, existsError)
+    return { data: null, error: existsError }
+  }
+
+  if (!existsData) {
+    return { data: null, error: { message: 'Retiro no encontrado.' } }
+  }
+
+  // Si ya estaba retornado, igualmente actualizamos (o podrías cancelar). Mantengo update idempotente.
+
+  // 2) Update sin single() para evitar coerción si el backend no devuelve exactamente 1 fila
+  const { data, error } = await supabase
+    .from('pie_retiros')
+    .update({
+      estado: 'retornado',
+      fecha_retorno: ahora.toISOString(),
+      hora_retorno: ahora.toTimeString().slice(0, 8),
+    })
+    .eq('id', retiroId)
+    .select('id')
+    .maybeSingle()
+
+  console.log('resultado retorno', data, error)
+
+  if (error) return { data: null, error }
+  return { data, error: null }
+}
+
+
+
+
+
+
 

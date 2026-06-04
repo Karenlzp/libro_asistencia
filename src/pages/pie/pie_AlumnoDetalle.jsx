@@ -7,7 +7,9 @@ import {
   getAlumnoPieDetail,
   getObservacionesPie,
   getRetirosPie,
+  registrarRetornoPie,
 } from '../../services/pieService'
+
 
 function formatCurso(c) {
   if (!c) return '—'
@@ -28,6 +30,8 @@ export default function PieAlumnoDetalle({ profile }) {
   const navigate = useNavigate()
 
   const alumnoId = id
+  
+
 
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState(null)
@@ -101,6 +105,14 @@ export default function PieAlumnoDetalle({ profile }) {
     if (!retiroForm.motivo.trim()) return notify('error', 'Escribe el motivo.')
     if (!alumno) return
 
+    const tieneRetiroActivo = retiros.some((r) => String(r.estado) === 'activo')
+    if (tieneRetiroActivo) {
+      return notify(
+        'error',
+        'El alumno ya posee un retiro activo. Debe registrar el retorno antes de crear un nuevo retiro.',
+      )
+    }
+
     const cursoId = alumno.curso_id
 
     const { error } = await createRetiroPie({
@@ -111,13 +123,39 @@ export default function PieAlumnoDetalle({ profile }) {
       tipo: retiroForm.tipo,
     })
 
-    if (error) return notify('error', error.message)
+    if (error) {
+      // Mensaje amigable si la restricción única bloquea (por activación concurrente)
+      const msg = error.message || ''
+      if (msg.includes('unique constraint') || msg.includes('idx_pie_retiro_activo_unico') || msg.includes('duplicate key')) {
+        return notify(
+          'error',
+          'El alumno ya posee un retiro activo. Debe registrar el retorno antes de crear un nuevo retiro.',
+        )
+      }
+      return notify('error', error.message)
+    }
 
     setRetiroOpen(false)
     setRetiroForm({ motivo: '', tipo: 'retiro' })
     await load()
     notify('success', 'Retiro registrado.')
   }
+
+  const handleRegistrarRetorno = async (retiroId) => {
+    const { error } = await registrarRetornoPie(retiroId)
+
+    if (error) {
+      notify('error', error.message)
+      return
+    }
+
+    await load()
+    notify('success', 'Retorno registrado correctamente.')
+  }
+
+
+
+
 
   if (loading) {
     return (
@@ -242,10 +280,19 @@ export default function PieAlumnoDetalle({ profile }) {
                 <div className="card-subtitle">Motivo, estado y fecha</div>
               </div>
               <div>
-                <button className="button primary" onClick={() => setRetiroOpen(true)}>
-                  Retirar de clase
-                </button>
+                {retiros.some((r) => String(r.estado) === 'activo') ? (
+                  <>
+                    <div className="badge" style={{ background: 'var(--blue)', color: 'white' }}>
+                      Alumno actualmente retirado de clases
+                    </div>
+                  </>
+                ) : (
+                  <button className="button primary" onClick={() => setRetiroOpen(true)}>
+                    Retirar de clase
+                  </button>
+                )}
               </div>
+
             </div>
 
             {retiros.length === 0 ? (
@@ -262,6 +309,9 @@ export default function PieAlumnoDetalle({ profile }) {
                       <th>Motivo</th>
                       <th>Estado</th>
                       <th>Fecha</th>
+                      <th>Fecha Retorno</th>
+                      <th>Hora Retorno</th>
+
                     </tr>
                   </thead>
                   <tbody>
@@ -269,13 +319,28 @@ export default function PieAlumnoDetalle({ profile }) {
                       <tr key={r.id}>
                         <td><span className="badge default">{r.tipo}</span></td>
                         <td style={{ whiteSpace: 'pre-wrap' }}>{r.motivo}</td>
-                        <td>
-                          <span className={`badge ${String(r.estado).toLowerCase() === 'activo' ? 'positiva' : 'default'}`}>
-                            {r.estado ?? '—'}
-                          </span>
+                      <td>
+                          {String(r.estado) === 'activo' ? (
+                            <button
+                              className="button primary"
+                              style={{ padding: '6px 12px', fontSize: '.78rem' }}
+                              onClick={() => handleRegistrarRetorno(r.id)}
+                            >
+                              Registrar retorno
+                            </button>
+                          ) : (
+                            <span className="badge" style={{ background: 'var(--blue)', color: 'white' }}>
+                              Retornado
+                            </span>
+                          )}
+
                         </td>
+
                         <td style={{ color: 'var(--muted)' }}>{formatFecha(r.created_at)}</td>
+                        <td style={{ color: 'var(--muted)' }}>{formatFecha(r.fecha_retorno)}</td>
+                        <td style={{ color: 'var(--muted)' }}>{r.hora_retorno ?? '—'}</td>
                       </tr>
+
                     ))}
                   </tbody>
                 </table>
