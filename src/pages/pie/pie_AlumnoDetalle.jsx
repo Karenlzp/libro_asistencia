@@ -5,8 +5,11 @@ import {
   createObservacionPie,
   createRetiroPie,
   getAlumnoPieDetail,
+  getAnotacionesAlumno,
+  getAsistenciaAlumnoPie,
   getObservacionesPie,
   getRetirosPie,
+  getResumenPieAlumno,
   registrarRetornoPie,
 } from '../../services/pieService'
 
@@ -47,6 +50,9 @@ export default function PieAlumnoDetalle({ profile }) {
 
   const [alumno, setAlumno] = useState(null)
   const [observaciones, setObservaciones] = useState([])
+  const [anotaciones, setAnotaciones] = useState([])
+  const [resumen, setResumen] = useState(null)
+  const [asistencias, setAsistencias] = useState([])
   const [retiros, setRetiros] = useState([])
   const [informes, setInformes] = useState([])
 
@@ -83,20 +89,38 @@ export default function PieAlumnoDetalle({ profile }) {
     setLoading(true)
     setStatus(null)
 
-    const [det, obs, ret, inf] = await Promise.all([
+    const [det, obs, anot, res, asi, ret, inf] = await Promise.all([
       getAlumnoPieDetail(alumnoId),
       getObservacionesPie(alumnoId),
+      getAnotacionesAlumno(alumnoId),
+      getResumenPieAlumno(alumnoId),
+      getAsistenciaAlumnoPie(alumnoId),
       getRetirosPie(alumnoId),
       getInformesPie(alumnoId),
     ])
 
     if (det.error) return notify('error', det.error.message)
     if (obs.error) return notify('error', obs.error.message)
+    if (anot.error) return notify('error', anot.error.message)
+
+    // v_pie_resumen puede no existir para el alumno: no debe romper la pantalla
+    if (res?.error && res.error.message) {
+      // Mantengo el comportamiento amigable: si no hay fila, mostramos vacío
+      // (maybeSingle típicamente no llega como "error" sino con data null)
+      // Si por alguna razón llega error real, no rompemos.
+      setResumen(null)
+    } else {
+      setResumen(res?.data ?? null)
+    }
+
+    if (asi?.error) return notify('error', asi.error.message)
     if (ret.error) return notify('error', ret.error.message)
     if (inf.error) return notify('error', inf.error.message)
 
     setAlumno(det.data)
     setObservaciones(obs.data ?? [])
+    setAnotaciones(anot.data ?? [])
+    setAsistencias(asi.data ?? [])
     setRetiros(ret.data ?? [])
     setInformes(inf.data ?? [])
     setLoading(false)
@@ -227,16 +251,80 @@ export default function PieAlumnoDetalle({ profile }) {
 
       {status && <div className={`alert ${status.type}`} style={{ marginBottom: 16 }}>{status.msg}</div>}
 
-      <div className="tab-strip">
-        {[
-          { key: 'observaciones', label: `Observaciones (${observaciones.length})` },
-          { key: 'retiros', label: `Retiros (${retiros.length})` },
-          { key: 'informes', label: `Informes (${informes.length})` },
-        ].map(({ key, label }) => (
-          <button key={key} className={`tab-btn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
-            {label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <div className="card-title">Resumen Académico</div>
+              <div className="card-subtitle">Indicadores académicos y asistencia</div>
+            </div>
+          </div>
+
+          {resumen == null ? (
+            <div className="empty-state" style={{ paddingTop: 4 }}>
+              <div className="empty-state-icon">📊</div>
+              <p>No existe resumen académico disponible para este alumno.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                <div style={{ padding: '10px 12px', background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)' }}>
+                  <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>Promedio académico</div>
+                  <div style={{ fontWeight: 700, color: 'var(--gray-900)', marginTop: 4 }}>
+                    {resumen.promedio_notas ?? '—'}
+                  </div>
+                </div>
+
+                <div style={{ padding: '10px 12px', background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)' }}>
+                  <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>% Asistencia</div>
+                  <div style={{ fontWeight: 700, color: 'var(--gray-900)', marginTop: 4 }}>
+                    {resumen.porcentaje_asistencia ?? '—'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span
+                  className="badge"
+                  style={{
+                    background: resumen.riesgo_academico === true ? 'var(--red)' : 'var(--green)',
+                    color: 'white',
+                  }}
+                >
+                  Riesgo académico: {resumen.riesgo_academico === true ? 'Alto' : 'Bajo'}
+                </span>
+
+                <span
+                  className="badge"
+                  style={{
+                    background: resumen.riesgo_asistencia === true ? 'var(--red)' : 'var(--green)',
+                    color: 'white',
+                  }}
+                >
+                  Riesgo asistencia: {resumen.riesgo_asistencia === true ? 'Alto' : 'Bajo'}
+                </span>
+              </div>
+
+              <div style={{ fontSize: '.72rem', color: 'var(--muted)' }}>
+                Nivel: {resumen.nivel ?? '—'} · Letra: {resumen.letra ?? '—'}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="tab-strip">
+          {[
+            { key: 'observaciones', label: `Observaciones (${observaciones.length})` },
+            { key: 'anotaciones', label: `Anotaciones (${anotaciones.length})` },
+            { key: 'asistencia', label: `Asistencia (${asistencias.length})` },
+            { key: 'retiros', label: `Retiros (${retiros.length})` },
+            { key: 'informes', label: `Informes (${informes.length})` },
+          ].map(({ key, label }) => (
+            <button key={key} className={`tab-btn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
 
@@ -348,6 +436,130 @@ export default function PieAlumnoDetalle({ profile }) {
               </div>
             </form>
 
+          </div>
+        </div>
+      )}
+
+      {tab === 'asistencia' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Asistencia PIE</div>
+                <div className="card-subtitle">Historial de asistencia con fecha, asignatura y estado</div>
+              </div>
+            </div>
+
+            {asistencias.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">📅</div>
+                <p>No hay asistencia registrada para este alumno.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Asignatura</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {asistencias.map((a, idx) => {
+                      const estadoRaw = a.estado ?? ''
+                      const estado = String(estadoRaw).trim().toLowerCase()
+
+                      const isPresente = estado === 'presente'
+                      const isAusente = estado === 'ausente'
+
+                      const badgeBg = isPresente ? 'var(--green)' : isAusente ? 'var(--red)' : 'var(--gray-300)'
+                      const badgeColor = 'white'
+
+                      return (
+                        <tr
+                          key={String(a.asistencia_id ?? a.id ?? idx)}
+                        >
+                          <td style={{ color: 'var(--muted)' }}>{formatFecha(a.fecha)}</td>
+                          <td>{a.asignatura ?? '—'}</td>
+                          <td>
+                            <span
+                              className="badge"
+                              style={{
+                                background: badgeBg,
+                                color: badgeColor,
+                              }}
+                            >
+                              {a.estado ?? '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'anotaciones' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Anotaciones PIE</div>
+                <div className="card-subtitle">Positivas y negativas con fecha y descripción</div>
+              </div>
+            </div>
+
+            {anotaciones.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">📝</div>
+                <p>No hay anotaciones registradas para este alumno.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {anotaciones.map((a) => {
+                  const tipo = a.tipo ?? '—'
+                  const isPos = String(tipo) === 'positiva'
+                  const badgeBg = isPos ? 'var(--green)' : 'var(--red)'
+                  const badgeColor = 'white'
+
+                  return (
+                    <div
+                      key={a.id}
+                      style={{
+                        padding: '14px 16px',
+                        background: 'var(--gray-50)',
+                        borderRadius: 'var(--radius-sm)',
+                        borderLeft: `3px solid ${isPos ? 'var(--green)' : 'var(--red)'}`,
+                      }}
+                    >
+                      <div style={{ marginBottom: 10 }}>
+                        <span
+                          className="badge"
+                          style={{
+                            background: badgeBg,
+                            color: badgeColor,
+                          }}
+                        >
+                          {tipo}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '.78rem', color: 'var(--gray-900)', marginBottom: 6 }}>
+                        <strong>Descripción:</strong>{' '}
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{a.descripcion ?? '—'}</span>
+                      </div>
+
+                      <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>{formatFecha(a.fecha)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -151,6 +151,40 @@ export async function registrarRetornoPie(retiroId) {
   return { data, error: null }
 }
 
+// ── Anotaciones PIE ─────────────────────────────────────────────────────
+// (tabla: anotaciones)
+export async function getAnotacionesAlumno(alumnoId) {
+  const { data, error } = await supabase
+    .from('anotaciones')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .order('fecha', { ascending: false })
+
+  return { data, error }
+}
+
+// ── Resumen académico PIE (vista v_pie_resumen) ──────────────────────────
+export async function getResumenPieAlumno(alumnoId) {
+  const { data, error } = await supabase
+    .from('v_pie_resumen')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .maybeSingle()
+
+  return { data, error }
+}
+
+// ── Asistencia PIE (vista v_pie_asistencia) ─────────────────────────────
+export async function getAsistenciaAlumnoPie(alumnoId) {
+  const { data, error } = await supabase
+    .from('v_pie_asistencia')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .order('fecha', { ascending: false })
+
+  return { data, error }
+}
+
 
 
 
