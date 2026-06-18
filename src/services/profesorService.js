@@ -152,11 +152,41 @@
     return { data, error }
     }
 
+    // ── Historial de observaciones por alumno ────────────────────────────────────
+    export async function getObservacionesPorAlumno(alumnoId) {
+    const { data, error } = await supabase
+        .from('observaciones')
+        .select('id, contenido, fecha')
+        .eq('alumno_id', alumnoId)
+        .order('fecha', { ascending: false })
+    return { data, error }
+    }
+
     // ── Alertas del curso del profesor ───────────────────────────────────────────
     export async function getAlertasPorCurso(cursoId) {
     const { data, error } = await supabase
         .from('v_alertas')
         .select('*')
         .eq('curso_id', cursoId)
+    return { data, error }
+    }
+
+    // ── Historial de retiros PIE por alumno ───────────────────────────────────
+    // Fuente: pie_retiros
+    export async function getRetirosPiePorAlumno({ alumnoId, cursoId }) {
+    if (!alumnoId) return { data: [], error: null }
+
+    let q = supabase
+        .from('pie_retiros')
+        .select(
+        'id, alumno_id, curso_id, motivo, tipo, estado, created_at, fecha_retorno, hora_retorno'
+        )
+        .eq('alumno_id', alumnoId)
+
+    if (cursoId) q = q.eq('curso_id', cursoId)
+
+    q = q.order('created_at', { ascending: false })
+
+    const { data, error } = await q
     return { data, error }
     }

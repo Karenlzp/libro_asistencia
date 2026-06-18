@@ -16,6 +16,8 @@ import { useEffect, useMemo, useState } from 'react'
     crearAnotacion,
     crearRetiro,
     crearObservacion,
+    getObservacionesPorAlumno,
+    getRetirosPiePorAlumno,
     } from '../../services/profesorService'
 
 
@@ -36,6 +38,20 @@ import { useEffect, useMemo, useState } from 'react'
     const [cursoId, setCursoId]           = useState('')
     const [asignaturaId, setAsignaturaId] = useState('')
 
+    const [searchAlumno, setSearchAlumno] = useState('')
+
+    const alumnosFiltrados = useMemo(() => {
+        const q = searchAlumno.trim().toLowerCase()
+        if (!q) return alumnos
+        return alumnos.filter(a => (a?.nombre ?? '').toLowerCase().includes(q))
+    }, [alumnos, searchAlumno])
+
+    const alertasFiltradas = useMemo(() => {
+        const q = searchAlumno.trim().toLowerCase()
+        if (!q) return alertas
+        return alertas.filter(a => (a?.alumno ?? '').toLowerCase().includes(q))
+    }, [alertas, searchAlumno])
+
     const [evalSelId, setEvalSelId]       = useState('')
     const [notasEval, setNotasEval]       = useState([])
     const [notasInput, setNotasInput]     = useState({})
@@ -47,13 +63,50 @@ import { useEffect, useMemo, useState } from 'react'
 
     const [evalForm, setEvalForm] = useState({ nombre: '', porcentaje: 20, fecha: hoy })
     const [anotForm, setAnotForm] = useState({ alumnoId: '', tipo: 'positiva', descripcion: '' })
-    const [retiroForm, setRetiroForm] = useState({ alumnoId: '', tipo: 'conducta', motivo: '' })
+    const [retiroForm, setRetiroForm] = useState({ alumnoId: '' })
+    const [retirosHist, setRetirosHist] = useState([])
+    const [loadingRetirosHist, setLoadingRetirosHist] = useState(false)
     const [obsForm, setObsForm] = useState({ alumnoId: '', contenido: '' })
+    const [observacionesHist, setObservacionesHist] = useState([])
+    const [loadingObservacionesHist, setLoadingObservacionesHist] = useState(false)
 
     useEffect(() => {
         if (!profile?.id) return
         loadBase()
     }, [profile?.id])
+
+    useEffect(() => {
+        const run = async () => {
+        if (!obsForm.alumnoId) {
+            setObservacionesHist([])
+            return
+        }
+        setLoadingObservacionesHist(true)
+        const { data, error } = await getObservacionesPorAlumno(obsForm.alumnoId)
+        if (!error) setObservacionesHist(data ?? [])
+        else setObservacionesHist([])
+        setLoadingObservacionesHist(false)
+        }
+        run()
+    }, [obsForm.alumnoId])
+
+    useEffect(() => {
+        const run = async () => {
+        if (!retiroForm.alumnoId) {
+            setRetirosHist([])
+            return
+        }
+        setLoadingRetirosHist(true)
+        const { data, error } = await getRetirosPiePorAlumno({
+            alumnoId: retiroForm.alumnoId,
+            cursoId: cursoId || undefined,
+        })
+        if (!error) setRetirosHist(data ?? [])
+        else setRetirosHist([])
+        setLoadingRetirosHist(false)
+        }
+        run()
+    }, [retiroForm.alumnoId, cursoId])
 
     const loadBase = async () => {
 
@@ -196,18 +249,7 @@ import { useEffect, useMemo, useState } from 'react'
         setAnotaciones(data ?? [])
     }
 
-    const handleCrearRetiro = async (e) => {
-        e.preventDefault()
-        if (!retiroForm.alumnoId || !retiroForm.motivo)
-        return notify('error', 'Selecciona alumno y escribe el motivo.')
-        const { error } = await crearRetiro({
-        alumnoId: retiroForm.alumnoId, profesorId: profile.id,
-        motivo: retiroForm.motivo, tipo: retiroForm.tipo,
-        })
-        if (error) return notify('error', 'Error: ' + error.message)
-        notify('success', 'Retiro registrado.')
-        setRetiroForm(p => ({ ...p, motivo: '' }))
-    }
+    // Retiros: ahora solo lectura (gestionados por PIE)
 
     const handleCrearObservacion = async (e) => {
         e.preventDefault()
@@ -217,8 +259,17 @@ import { useEffect, useMemo, useState } from 'react'
         alumnoId: obsForm.alumnoId, profesorId: profile.id, contenido: obsForm.contenido,
         })
         if (error) return notify('error', 'Error: ' + error.message)
+
         notify('success', 'Observación guardada.')
+        const alumnoId = obsForm.alumnoId
         setObsForm(p => ({ ...p, contenido: '' }))
+
+        // Refrescar historial sin recargar
+        setLoadingObservacionesHist(true)
+        const { data, error: errorHist } = await getObservacionesPorAlumno(alumnoId)
+        if (!errorHist) setObservacionesHist(data ?? [])
+        else setObservacionesHist([])
+        setLoadingObservacionesHist(false)
     }
 
     if (loading) return <div className="loading-wrap"><div className="spinner" /> Cargando panel...</div>
@@ -269,6 +320,18 @@ import { useEffect, useMemo, useState } from 'react'
             </div>
         </div>
 
+        {/* Input buscar alumno (visual) */}
+        {cursoId && (
+            <div style={{ marginTop: 14, marginBottom: 6 }}>
+                <input
+                    className="form-input"
+                    placeholder="Buscar alumno..."
+                    value={searchAlumno}
+                    onChange={e => setSearchAlumno(e.target.value)}
+                />
+            </div>
+        )}
+
         {/* Alertas del curso */}
         {alertas.length > 0 && (
             <div className="card section" style={{ borderLeft: '3px solid var(--danger)' }}>
@@ -279,23 +342,31 @@ import { useEffect, useMemo, useState } from 'react'
                     <tr><th>Alumno</th><th>Promedio</th><th>Asistencia</th><th>Anot. neg.</th><th>Alertas</th></tr>
                 </thead>
                 <tbody>
-                    {alertas.map(a => (
-                    <tr key={a.alumno_id}>
-                        <td><strong>{a.alumno}</strong></td>
-                        <td>{a.promedio_general != null
-                        ? <span className={`nota-pill ${a.promedio_general < 4 ? 'baja' : 'media'}`}>{a.promedio_general}</span>
-                        : '—'}</td>
-                        <td>{a.porcentaje_asistencia != null
-                        ? <span className={`badge ${a.porcentaje_asistencia < 85 ? 'negativa' : 'positiva'}`}>{a.porcentaje_asistencia}%</span>
-                        : '—'}</td>
-                        <td><span className={`badge ${a.anotaciones_negativas >= 3 ? 'negativa' : 'default'}`}>{a.anotaciones_negativas}</span></td>
-                        <td style={{ display: 'flex', gap: 4 }}>
-                        {a.alerta_promedio   && <span className="badge negativa">Promedio</span>}
-                        {a.alerta_asistencia && <span className="badge negativa">Asistencia</span>}
-                        {a.alerta_conducta   && <span className="badge negativa">Conducta</span>}
-                        </td>
-                    </tr>
-                    ))}
+                    {alertasFiltradas.length === 0 ? (
+                        <tr>
+                            <td colSpan={5} style={{ textAlign: 'center', padding: 14 }}>
+                                No hay alertas que coincidan con tu búsqueda.
+                            </td>
+                        </tr>
+                    ) : (
+                        alertasFiltradas.map(a => (
+                            <tr key={a.alumno_id}>
+                                <td><strong>{a.alumno}</strong></td>
+                                <td>{a.promedio_general != null
+                                ? <span className={`nota-pill ${a.promedio_general < 4 ? 'baja' : 'media'}`}>{a.promedio_general}</span>
+                                : '—'}</td>
+                                <td>{a.porcentaje_asistencia != null
+                                ? <span className={`badge ${a.porcentaje_asistencia < 85 ? 'negativa' : 'positiva'}`}>{a.porcentaje_asistencia}%</span>
+                                : '—'}</td>
+                                <td><span className={`badge ${a.anotaciones_negativas >= 3 ? 'negativa' : 'default'}`}>{a.anotaciones_negativas}</span></td>
+                                <td style={{ display: 'flex', gap: 4 }}>
+                                {a.alerta_promedio   && <span className="badge negativa">Promedio</span>}
+                                {a.alerta_asistencia && <span className="badge negativa">Asistencia</span>}
+                                {a.alerta_conducta   && <span className="badge negativa">Conducta</span>}
+                                </td>
+                            </tr>
+                        ))
+                    )}
                 </tbody>
                 </table>
             </div>
@@ -416,7 +487,7 @@ import { useEffect, useMemo, useState } from 'react'
 
             {!cursoId ? (
                 <div className="empty-state"><div className="empty-state-icon">🏫</div><p>Selecciona un curso primero.</p></div>
-            ) : alumnos.length === 0 ? (
+            ) : alumnosFiltrados.length === 0 ? (
                 <div className="empty-state"><div className="empty-state-icon">👥</div><p>No hay alumnos en este curso.</p></div>
             ) : (
                 <>
@@ -426,7 +497,7 @@ import { useEffect, useMemo, useState } from 'react'
                         <tr><th>Alumno</th><th>Marcar</th><th style={{ width: 120, textAlign: 'center' }}>Guardado en BD</th></tr>
                     </thead>
                     <tbody>
-                        {alumnos.map(a => {
+                        {alumnosFiltrados.map(a => {
                         const estadoActual   = asistencia[a.id]
                         const estadoGuardado = asistenciaGuardada[a.id]
                         const hayCambio      = estadoActual !== estadoGuardado && estadoActual !== null
@@ -516,7 +587,7 @@ import { useEffect, useMemo, useState } from 'react'
                     <select className="form-select" value={anotForm.alumnoId}
                     onChange={e => setAnotForm(p => ({ ...p, alumnoId: e.target.value }))} required>
                     <option value="">{alumnos.length ? 'Elegir alumno' : 'Selecciona un curso primero'}</option>
-                    {alumnos.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                    {alumnosFiltrados.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
                     </select>
                 </div>
                 <div className="form-group">
@@ -569,33 +640,77 @@ import { useEffect, useMemo, useState } from 'react'
         {/* Tab: Retiros */}
         {tab === 'retiros' && (
             <div className="card">
-            <div className="card-header"><div className="card-title">Registrar retiro de clase</div></div>
-            <form className="form-grid" onSubmit={handleCrearRetiro}>
-                <div className="form-group">
+            <div className="card-header">
+                <div className="card-title">Retiros</div>
+                <div className="card-subtitle">Solo lectura — gestionados por PIE</div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">Alumno</label>
-                <select className="form-select" value={retiroForm.alumnoId}
-                    onChange={e => setRetiroForm(p => ({ ...p, alumnoId: e.target.value }))} required>
-                    <option value="">{alumnos.length ? 'Elegir alumno' : 'Selecciona un curso primero'}</option>
-                    {alumnos.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                <select
+                    className="form-select"
+                    value={retiroForm.alumnoId}
+                    onChange={e => setRetiroForm({ alumnoId: e.target.value })}
+                    required={false}
+                    disabled={!cursoId}
+                >
+                    <option value="">{cursoId ? (alumnos.length ? 'Elegir alumno' : 'No hay alumnos en este curso') : 'Selecciona un curso primero'}</option>
+                    {alumnosFiltrados.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
                 </select>
                 </div>
-                <div className="form-group">
-                <label className="form-label">Tipo</label>
-                <select className="form-select" value={retiroForm.tipo}
-                    onChange={e => setRetiroForm(p => ({ ...p, tipo: e.target.value }))}>
-                    <option value="conducta">Conducta</option>
-                    <option value="refuerzo">Refuerzo</option>
-                </select>
+            </div>
+
+            {loadingRetirosHist && (
+                <div className="loading-wrap"><div className="spinner" /></div>
+            )}
+
+            {!loadingRetirosHist && !retiroForm.alumnoId && (
+                <div className="empty-state" style={{ marginTop: 10 }}>
+                <div className="empty-state-icon">🗂️</div>
+                <p>Selecciona un alumno para ver su historial de retiros.</p>
                 </div>
-                <div className="form-group full">
-                <label className="form-label">Motivo</label>
-                <input className="form-input" placeholder="Describe el motivo del retiro…"
-                    value={retiroForm.motivo} onChange={e => setRetiroForm(p => ({ ...p, motivo: e.target.value }))} required />
-                </div>
-                <div className="form-actions">
-                <button className="button primary" type="submit">Registrar retiro</button>
-                </div>
-            </form>
+            )}
+
+            {!loadingRetirosHist && retiroForm.alumnoId && (
+                <>
+                {retirosHist.length === 0 ? (
+                    <div className="empty-state" style={{ marginTop: 10 }}>
+                    <div className="empty-state-icon">✅</div>
+                    <p>No hay retiros registrados para este alumno.</p>
+                    </div>
+                ) : (
+                    <div className="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Alumno</th>
+                            <th>Tipo</th>
+                            <th>Motivo</th>
+                            <th>Estado</th>
+                            <th style={{ width: 140 }}>Fecha registro</th>
+                            <th style={{ width: 140 }}>Fecha retorno</th>
+                            <th style={{ width: 120 }}>Hora retorno</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {retirosHist.map(r => (
+                            <tr key={r.id}>
+                                <td><strong>{r.alumno_id}</strong></td>
+                                <td><span className="badge default">{r.tipo}</span></td>
+                                <td>{r.motivo}</td>
+                                <td><span className={`badge ${r.estado === 'retornado' ? 'positiva' : 'negativa'}`}>{r.estado}</span></td>
+                                <td>{r.created_at ? String(r.created_at).slice(0, 10) : '—'}</td>
+                                <td>{r.fecha_retorno ? String(r.fecha_retorno).slice(0, 10) : '—'}</td>
+                                <td>{r.hora_retorno ?? '—'}</td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                    </div>
+                )}
+                </>
+            )}
             </div>
         )}
 
@@ -612,7 +727,7 @@ import { useEffect, useMemo, useState } from 'react'
                 <select className="form-select" value={obsForm.alumnoId}
                     onChange={e => setObsForm(p => ({ ...p, alumnoId: e.target.value }))} required>
                     <option value="">{alumnos.length ? 'Elegir alumno' : 'Selecciona un curso primero'}</option>
-                    {alumnos.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                    {alumnosFiltrados.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
                 </select>
                 </div>
                 <div className="form-group full">
@@ -625,6 +740,44 @@ import { useEffect, useMemo, useState } from 'react'
                 <button className="button primary" type="submit">Guardar observación</button>
                 </div>
             </form>
+
+            {/* Historial de observaciones */}
+            <div style={{ marginTop: 20 }}>
+                <div className="card-title" style={{ marginBottom: 10 }}>Historial de observaciones</div>
+
+                {!obsForm.alumnoId ? (
+                <div className="empty-state" style={{ margin: 0 }}>
+                    <div className="empty-state-icon">🗂️</div>
+                    <p>Selecciona un alumno para ver su historial.</p>
+                </div>
+                ) : loadingObservacionesHist ? (
+                <div className="loading-wrap"><div className="spinner" /></div>
+                ) : observacionesHist.length === 0 ? (
+                <div className="empty-state" style={{ margin: 0 }}>
+                    <div className="empty-state-icon">💬</div>
+                    <p>Aún no hay observaciones para este alumno.</p>
+                </div>
+                ) : (
+                <div className="table-wrap">
+                    <table>
+                    <thead>
+                        <tr>
+                        <th style={{ width: 140 }}>Fecha</th>
+                        <th>Contenido</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {observacionesHist.map(o => (
+                        <tr key={o.id}>
+                            <td>{o.fecha}</td>
+                            <td style={{ whiteSpace: 'pre-wrap' }}>{o.contenido}</td>
+                        </tr>
+                        ))}
+                    </tbody>
+                    </table>
+                </div>
+                )}
+            </div>
             </div>
         )}
         </div>

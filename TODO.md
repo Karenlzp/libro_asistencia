@@ -1,19 +1,9 @@
-# TODO — Informes Internos PIE (React + Supabase)
-
-- [ ] Paso 1: Agregar backend en `src/services/pieService.js`
-  - [ ] getInformesPie(alumnoId)
-  - [ ] uploadInformePie(file, alumnoId) -> upload a bucket `pie-informes`, path único, obtener signed URL (temporal) para usar en UI y/o para guardar, pero guardar solo path en DB.
-  - [ ] createInformePie(...) -> insertar en `pie_informes` (guardar alumno_id, pie_id, titulo, descripcion, archivo_url=path, nombre_archivo)
-  - [ ] getInformeUrl(path) -> generar signed URL en tiempo real
-
-- [ ] Paso 2: Actualizar frontend en `src/pages/pie/pie_AlumnoDetalle.jsx`
-  - [ ] Agregar nueva pestaña `Informes` manteniendo `Observaciones` y `Retiros` sin cambios
-  - [ ] Agregar formulario (título, descripción, file) con validaciones
-  - [ ] Implementar carga: upload -> signed URL -> createInformePie -> recargar listado
-  - [ ] Implementar listado: mostrar Título, Descripción, Fecha, Archivo
-  - [ ] Implementar botones: `Ver informe` (abrir en nueva pestaña con URL firmada), `Descargar` (download desde URL firmada)
-
-- [ ] Paso 3: Verificar que errores de Supabase muestren `error.message` en la alerta existente del módulo PIE.
-
-- [ ] Paso 4: Ejecutar `npm run build` o `npm run lint` para asegurar que no se rompa el proyecto.
-
+- [x] Agregar en src/services/profesorService.js la función getObservacionesPorAlumno(alumnoId) ordenada por fecha descendente
+- [ ] Actualizar src/pages/profesor/profesor_Dashboard.jsx:
+  - [x] Importar getObservacionesPorAlumno
+  - [x] Mantener intacto el formulario actual de creación de observaciones
+  - [x] Agregar sección “Historial de observaciones” únicamente dentro del tab “observacion”
+  - [x] Cargar historial cuando cambie el alumno seleccionado (obsForm.alumnoId)
+  - [x] Mostrar fecha y contenido, y estado vacío amigable si no hay registros
+  - [x] Refrescar historial automáticamente luego de guardar una nueva observación sin recargar la página
+- [x] Verificar que no se modifican otras pestañas (Notas, Asistencia, Anotaciones, Retiros, Alertas)
