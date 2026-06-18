@@ -1,5 +1,6 @@
     // src/services/profesorService.js
     import { supabase } from '../supabaseClient'
+    import { writeAuditLog } from './auditService'
 
     // ── Cursos y asignaturas del profesor ─────────────────────────────────────────
     export async function getProfesorCursos(profesorId) {
@@ -76,7 +77,7 @@
     }
 
     // ── Crear evaluación ──────────────────────────────────────────────────────────
-    export async function crearEvaluacion({ nombre, asignaturaId, profesorId, cursoId, porcentaje, fecha }) {
+    export async function crearEvaluacion({ nombre, asignaturaId, profesorId, cursoId, porcentaje, fecha, actor }) {
     const { data, error } = await supabase
         .from('evaluaciones')
         .insert({
@@ -89,11 +90,35 @@
         })
         .select()
         .single()
+
+    if (!error && data) {
+        await writeAuditLog({
+        actor,
+        action: 'crear',
+        entity: 'evaluacion',
+        entityId: data.id,
+        newValue: {
+            nombre: data.nombre,
+            asignatura_id: data.asignatura_id,
+            curso_id: data.curso_id,
+            porcentaje: data.porcentaje,
+            fecha: data.fecha,
+        },
+        metadata: { origen: 'profesor' },
+        })
+    }
     return { data, error }
     }
 
     // ── Guardar nota (insert o update) ───────────────────────────────────────────
-    export async function guardarNota({ evaluacionId, alumnoId, nota }) {
+    export async function guardarNota({ evaluacionId, alumnoId, nota, actor }) {
+    const { data: previa } = await supabase
+        .from('detalle_nota')
+        .select('id, nota')
+        .eq('evaluacion_id', evaluacionId)
+        .eq('alumno_id', alumnoId)
+        .maybeSingle()
+
     const { data, error } = await supabase
         .from('detalle_nota')
         .upsert(
@@ -102,12 +127,25 @@
         )
         .select()
         .single()
+
+    if (!error && data) {
+        await writeAuditLog({
+        actor,
+        action: previa ? 'editar' : 'crear',
+        entity: 'nota',
+        entityId: data.id,
+        fieldName: 'nota',
+        oldValue: previa ? { nota: previa.nota } : null,
+        newValue: { nota: data.nota },
+        metadata: { evaluacion_id: evaluacionId, alumno_id: alumnoId, origen: 'profesor' },
+        })
+    }
     return { data, error }
     }
 
     // ── Registrar asistencia masiva de un curso ───────────────────────────────────
     // registros = [{ alumnoId, estado }]
-    export async function registrarAsistenciaMasiva(cursoId, fecha, registros) {
+    export async function registrarAsistenciaMasiva(cursoId, fecha, registros, actor) {
     const rows = registros.map(r => ({
         alumno_id: r.alumnoId,
         curso_id:  cursoId,
@@ -115,40 +153,94 @@
         estado:    r.estado,
     }))
 
+    const alumnoIds = registros.map(r => r.alumnoId)
+    const { data: previos } = await supabase
+        .from('asistencia')
+        .select('alumno_id, estado')
+        .eq('curso_id', cursoId)
+        .eq('fecha', fecha)
+        .in('alumno_id', alumnoIds)
+
     const { data, error } = await supabase
         .from('asistencia')
         .upsert(rows, { onConflict: 'alumno_id,fecha' })
         .select()
+
+    if (!error) {
+        await writeAuditLog({
+        actor,
+        action: 'editar',
+        entity: 'asistencia',
+        entityId: `${cursoId}-${fecha}`,
+        fieldName: 'estado',
+        oldValue: previos ?? [],
+        newValue: rows,
+        metadata: { curso_id: cursoId, fecha, total_registros: rows.length, origen: 'profesor' },
+        })
+    }
     return { data, error }
     }
 
     // ── Crear anotación ───────────────────────────────────────────────────────────
-    export async function crearAnotacion({ alumnoId, profesorId, tipo, descripcion }) {
+    export async function crearAnotacion({ alumnoId, profesorId, tipo, descripcion, actor }) {
     const { data, error } = await supabase
         .from('anotaciones')
         .insert({ alumno_id: alumnoId, profesor_id: profesorId, tipo, descripcion })
         .select()
         .single()
+
+    if (!error && data) {
+        await writeAuditLog({
+        actor,
+        action: 'crear',
+        entity: 'anotacion',
+        entityId: data.id,
+        newValue: { alumno_id: alumnoId, profesor_id: profesorId, tipo },
+        metadata: { origen: 'profesor' },
+        })
+    }
     return { data, error }
     }
 
     // ── Crear retiro de clase ─────────────────────────────────────────────────────
-    export async function crearRetiro({ alumnoId, profesorId, motivo, tipo }) {
+    export async function crearRetiro({ alumnoId, profesorId, motivo, tipo, actor }) {
     const { data, error } = await supabase
         .from('retiros_clase')
         .insert({ alumno_id: alumnoId, profesor_id: profesorId, motivo, tipo })
         .select()
         .single()
+
+    if (!error && data) {
+        await writeAuditLog({
+        actor,
+        action: 'crear',
+        entity: 'retiro_clase',
+        entityId: data.id,
+        newValue: { alumno_id: alumnoId, profesor_id: profesorId, tipo, motivo },
+        metadata: { origen: 'profesor' },
+        })
+    }
     return { data, error }
     }
 
     // ── Crear observación ─────────────────────────────────────────────────────────
-    export async function crearObservacion({ alumnoId, profesorId, contenido }) {
+    export async function crearObservacion({ alumnoId, profesorId, contenido, actor }) {
     const { data, error } = await supabase
         .from('observaciones')
         .insert({ alumno_id: alumnoId, profesor_id: profesorId, contenido })
         .select()
         .single()
+
+    if (!error && data) {
+        await writeAuditLog({
+        actor,
+        action: 'crear',
+        entity: 'observacion',
+        entityId: data.id,
+        newValue: { alumno_id: alumnoId, profesor_id: profesorId, contenido },
+        metadata: { origen: 'profesor' },
+        })
+    }
     return { data, error }
     }
 

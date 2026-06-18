@@ -148,7 +148,7 @@ import { useEffect, useMemo, useState } from 'react'
     const handleGuardarNotas = async () => {
         const pendientes = notasEval
         .filter(n => notasInput[n.alumno_id] !== '' && notasInput[n.alumno_id] != null)
-        .map(n => guardarNota({ evaluacionId: evalSelId, alumnoId: n.alumno_id, nota: notasInput[n.alumno_id] }))
+        .map(n => guardarNota({ evaluacionId: evalSelId, alumnoId: n.alumno_id, nota: notasInput[n.alumno_id], actor: profile }))
         const resultados = await Promise.all(pendientes)
         const errores = resultados.filter(r => r.error)
         if (errores.length) notify('error', `${errores.length} nota(s) no se pudieron guardar.`)
@@ -160,7 +160,7 @@ import { useEffect, useMemo, useState } from 'react'
         const registros = Object.entries(asistencia)
         .filter(([, estado]) => estado !== null)
         .map(([alumnoId, estado]) => ({ alumnoId, estado }))
-        const { error } = await registrarAsistenciaMasiva(cursoId, fechaAsist, registros)
+        const { error } = await registrarAsistenciaMasiva(cursoId, fechaAsist, registros, profile)
         if (error) return notify('error', 'Error al guardar asistencia: ' + error.message)
         setAsistenciaGuardada({ ...asistencia })
         notify('success', 'Asistencia registrada correctamente.')
@@ -172,7 +172,7 @@ import { useEffect, useMemo, useState } from 'react'
         return notify('error', 'Selecciona curso, asignatura y nombre.')
         const { error } = await crearEvaluacion({
         nombre: evalForm.nombre, asignaturaId, profesorId: profile.id,
-        cursoId, porcentaje: evalForm.porcentaje, fecha: evalForm.fecha,
+        cursoId, porcentaje: evalForm.porcentaje, fecha: evalForm.fecha, actor: profile,
         })
         if (error) return notify('error', 'Error: ' + error.message)
         notify('success', 'Evaluación creada.')
@@ -187,7 +187,7 @@ import { useEffect, useMemo, useState } from 'react'
         return notify('error', 'Selecciona alumno y escribe una descripción.')
         const { error } = await crearAnotacion({
         alumnoId: anotForm.alumnoId, profesorId: profile.id,
-        tipo: anotForm.tipo, descripcion: anotForm.descripcion,
+        tipo: anotForm.tipo, descripcion: anotForm.descripcion, actor: profile,
         })
         if (error) return notify('error', 'Error: ' + error.message)
         notify('success', 'Anotación guardada.')
@@ -202,7 +202,7 @@ import { useEffect, useMemo, useState } from 'react'
         return notify('error', 'Selecciona alumno y escribe el motivo.')
         const { error } = await crearRetiro({
         alumnoId: retiroForm.alumnoId, profesorId: profile.id,
-        motivo: retiroForm.motivo, tipo: retiroForm.tipo,
+        motivo: retiroForm.motivo, tipo: retiroForm.tipo, actor: profile,
         })
         if (error) return notify('error', 'Error: ' + error.message)
         notify('success', 'Retiro registrado.')
@@ -214,7 +214,7 @@ import { useEffect, useMemo, useState } from 'react'
         if (!obsForm.alumnoId || !obsForm.contenido)
         return notify('error', 'Selecciona alumno y escribe la observación.')
         const { error } = await crearObservacion({
-        alumnoId: obsForm.alumnoId, profesorId: profile.id, contenido: obsForm.contenido,
+        alumnoId: obsForm.alumnoId, profesorId: profile.id, contenido: obsForm.contenido, actor: profile,
         })
         if (error) return notify('error', 'Error: ' + error.message)
         notify('success', 'Observación guardada.')
