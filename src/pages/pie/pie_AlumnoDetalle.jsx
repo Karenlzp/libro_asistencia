@@ -159,6 +159,7 @@ export default function PieAlumnoDetalle({ profile }) {
       tipoIntervencion: obsForm.tipo_intervencion,
       observacion: obsForm.observacion.trim(),
       resultado: obsForm.resultado.trim(),
+      actor: profile,
     })
 
     if (error) return notify('error', error.message)
@@ -190,6 +191,7 @@ export default function PieAlumnoDetalle({ profile }) {
       pieId: profile.id,
       motivo: retiroForm.motivo.trim(),
       tipo: retiroForm.tipo,
+      actor: profile,
     })
 
     if (error) {
@@ -211,7 +213,7 @@ export default function PieAlumnoDetalle({ profile }) {
   }
 
   const handleRegistrarRetorno = async (retiroId) => {
-    const { error } = await registrarRetornoPie(retiroId)
+    const { error } = await registrarRetornoPie(retiroId, profile)
 
     if (error) {
       notify('error', error.message)

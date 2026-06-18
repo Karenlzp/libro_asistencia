@@ -7,6 +7,7 @@ import { supabase } from './supabaseClient'
 import DashboardLayout from './layouts/DashboardLayout'
 // Auth / públicas
 import Login    from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
 import NotFound from './pages/NotFound'
 
 // Páginas por rol (las iremos creando paso a paso)
@@ -88,6 +89,8 @@ export default function App() {
               : <Login />
           }
         />
+
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* ── Rutas protegidas Admin ── */}
         <Route

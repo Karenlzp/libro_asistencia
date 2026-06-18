@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient'
+import { writeAuditLog } from './auditService'
 
 // ── Cursos ────────────────────────────────────────────────────────────────
 export async function getCursos() {
@@ -58,6 +59,7 @@ export async function createObservacionPie({
   tipoIntervencion,
   observacion,
   resultado,
+  actor,
 }) {
   const { data, error } = await supabase
     .from('pie_observaciones')
@@ -70,6 +72,23 @@ export async function createObservacionPie({
     })
     .select()
     .single()
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'crear',
+      entity: 'pie_observacion',
+      entityId: data.id,
+      newValue: {
+        alumno_id: alumnoId,
+        pie_id: pieId,
+        tipo_intervencion: tipoIntervencion,
+        observacion,
+        resultado,
+      },
+      metadata: { origen: 'pie' },
+    })
+  }
 
   return { data, error }
 }
@@ -89,17 +108,28 @@ export async function getRetirosPie(alumnoId) {
 }
 
 
-export async function createRetiroPie({ alumnoId, cursoId, pieId, motivo, tipo }) {
+export async function createRetiroPie({ alumnoId, cursoId, pieId, motivo, tipo, actor }) {
   const { data, error } = await supabase
     .from('pie_retiros')
     .insert({ alumno_id: alumnoId, curso_id: cursoId, pie_id: pieId, motivo, tipo })
     .select()
     .single()
 
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'crear',
+      entity: 'pie_retiro',
+      entityId: data.id,
+      newValue: { alumno_id: alumnoId, curso_id: cursoId, pie_id: pieId, motivo, tipo },
+      metadata: { origen: 'pie' },
+    })
+  }
+
   return { data, error }
 }
 
-export async function registrarRetornoPie(retiroId) {
+export async function registrarRetornoPie(retiroId, actor) {
   console.log('retiroId', retiroId)
 
 
@@ -148,6 +178,26 @@ export async function registrarRetornoPie(retiroId) {
   console.log('resultado retorno', data, error)
 
   if (error) return { data: null, error }
+
+  await writeAuditLog({
+    actor,
+    action: 'editar',
+    entity: 'pie_retiro',
+    entityId: retiroId,
+    fieldName: 'estado',
+    oldValue: {
+      estado: existsData.estado,
+      fecha_retorno: existsData.fecha_retorno,
+      hora_retorno: existsData.hora_retorno,
+    },
+    newValue: {
+      estado: 'retornado',
+      fecha_retorno: ahora.toISOString(),
+      hora_retorno: ahora.toTimeString().slice(0, 8),
+    },
+    metadata: { origen: 'pie' },
+  })
+
   return { data, error: null }
 }
 

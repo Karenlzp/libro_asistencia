@@ -296,7 +296,14 @@ export default function ProfesorDashboard({ profile }) {
   const handleGuardarNotas = async () => {
     const pendientes = notasEval
       .filter(n => notasInput[n.alumno_id] !== '' && notasInput[n.alumno_id] != null)
-      .map(n => guardarNota({ evaluacionId: evalSelId, alumnoId: n.alumno_id, nota: notasInput[n.alumno_id] }))
+      .map(n =>
+        guardarNota({
+          evaluacionId: evalSelId,
+          alumnoId: n.alumno_id,
+          nota: notasInput[n.alumno_id],
+          actor: profile,
+        })
+      )
 
     const resultados = await Promise.all(pendientes)
     const errores = resultados.filter(r => r.error)
@@ -313,7 +320,14 @@ export default function ProfesorDashboard({ profile }) {
       .filter(([, estado]) => estado !== null)
       .map(([alumnoId, estado]) => ({ alumnoId, estado }))
 
-    const { error } = await registrarAsistenciaMasiva(cursoId, asignaturaId, profile.id, fechaAsist, registros)
+    const { error } = await registrarAsistenciaMasiva(
+      cursoId,
+      asignaturaId,
+      profile.id,
+      fechaAsist,
+      registros,
+      profile,
+    )
     if (error) return notify('error', 'Error al guardar asistencia: ' + error.message)
 
     setAsistenciaGuardada({ ...asistencia })
@@ -331,6 +345,7 @@ export default function ProfesorDashboard({ profile }) {
       cursoId,
       porcentaje: evalForm.porcentaje,
       fecha: evalForm.fecha,
+      actor: profile,
     })
 
     if (error) return notify('error', 'Error: ' + error.message)
@@ -350,6 +365,7 @@ export default function ProfesorDashboard({ profile }) {
       profesorId: profile.id,
       tipo: anotForm.tipo,
       descripcion: anotForm.descripcion,
+      actor: profile,
     })
 
     if (error) return notify('error', 'Error: ' + error.message)
@@ -370,6 +386,7 @@ export default function ProfesorDashboard({ profile }) {
       alumnoId: obsForm.alumnoId,
       profesorId: profile.id,
       contenido: obsForm.contenido,
+      actor: profile,
     })
 
     if (error) return notify('error', 'Error: ' + error.message)

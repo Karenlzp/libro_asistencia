@@ -10,6 +10,48 @@ import {
   desactivarUsuario, getUsuariosInactivos, reactivarUsuario, modificarNota,
   crearAnotacionAdmin, cambiarCursoAlumno,
 } from '../../services/adminService'
+import { downloadAuditExcel, getAuditLogs } from '../../services/auditService'
+import { exportAdminReportsToExcel, getAdminReports, printAdminReport } from '../../services/reportService'
+
+function StudentsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 4 3 8.5 12 13l7-3.5V15h2V8.5L12 4Zm-5 8.63V16c0 1.66 2.24 3 5 3s5-1.34 5-3v-3.37l-5 2.5-5-2.5Z" fill="currentColor" />
+    </svg>
+  )
+}
+
+function TeacherIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 5.75A1.75 1.75 0 0 1 6.75 4h10.5A1.75 1.75 0 0 1 19 5.75v8.5A1.75 1.75 0 0 1 17.25 16h-4.36l-2.67 2.29A.75.75 0 0 1 9 17.72V16H6.75A1.75 1.75 0 0 1 5 14.25v-8.5Zm3.25 2a.75.75 0 0 0 0 1.5h7.5a.75.75 0 0 0 0-1.5h-7.5Zm0 3.5a.75.75 0 0 0 0 1.5H13a.75.75 0 0 0 0-1.5H8.25Z" fill="currentColor" />
+    </svg>
+  )
+}
+
+function CourseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4.75 5A1.75 1.75 0 0 0 3 6.75v10.5C3 18.22 3.78 19 4.75 19h14.5c.97 0 1.75-.78 1.75-1.75V6.75C21 5.78 20.22 5 19.25 5H4.75Zm.75 2h13v10h-13V7Zm2.25 2.25a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3.5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Z" fill="currentColor" />
+    </svg>
+  )
+}
+
+function AlertIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3.75a1 1 0 0 1 .9.56l7 14A1 1 0 0 1 19 19.75H5a1 1 0 0 1-.9-1.44l7-14a1 1 0 0 1 .9-.56Zm0 5a.75.75 0 0 0-.75.75v4.5a.75.75 0 0 0 1.5 0V9.5a.75.75 0 0 0-.75-.75Zm0 8.25a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor" />
+    </svg>
+  )
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 5c4.85 0 8.63 2.88 10.5 7-1.87 4.12-5.65 7-10.5 7S3.37 16.12 1.5 12C3.37 7.88 7.15 5 12 5Zm0 2C8.18 7 5.14 9.13 3.58 12 5.14 14.87 8.18 17 12 17s6.86-2.13 8.42-5C18.86 9.13 15.82 7 12 7Zm0 1.75A3.25 3.25 0 1 1 8.75 12 3.25 3.25 0 0 1 12 8.75Zm0 1.5A1.75 1.75 0 1 0 13.75 12 1.75 1.75 0 0 0 12 10.25Z" fill="currentColor" />
+    </svg>
+  )
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getNotaClass(n) {
@@ -26,6 +68,42 @@ function calcAsistencia(lista) {
   return Math.round(lista.filter(a => ['presente', 'justificado'].includes(a.estado)).length / lista.length * 100)
 }
 
+function getAlertValueClass(type, value) {
+  if (value == null) return 'muted'
+  if (type === 'promedio') return Number(value) < 4 ? 'critical' : 'normal'
+  if (type === 'asistencia') return Number(value) < 85 ? 'critical' : 'normal'
+  if (type === 'conducta') return Number(value) >= 3 ? 'critical' : 'normal'
+  return 'normal'
+}
+
+function formatDateTime(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('es-CL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatAuditValue(value) {
+  if (!value) return '—'
+
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value
+    if (Array.isArray(parsed)) return `${parsed.length} registro(s)`
+    if (typeof parsed === 'object') {
+      return Object.entries(parsed)
+        .map(([key, item]) => `${key}: ${item ?? '—'}`)
+        .join(' · ')
+    }
+    return String(parsed)
+  } catch {
+    return String(value)
+  }
+}
+
 export default function AdminDashboard({ profile }) {
   const [tab, setTab]                   = useState('alertas')
   const [resumen, setResumen]           = useState(null)
@@ -37,6 +115,13 @@ export default function AdminDashboard({ profile }) {
   const [loading, setLoading]           = useState(true)
   const [status, setStatus]             = useState(null)
   const [usuariosInactivos, setUsuariosInactivos] = useState([])
+  const [reportes, setReportes]         = useState(null)
+  const [loadingReportes, setLoadingReportes] = useState(false)
+  const [auditoria, setAuditoria]       = useState([])
+  const [loadingAuditoria, setLoadingAuditoria] = useState(false)
+  const [auditStorage, setAuditStorage] = useState('supabase')
+  const [auditWarning, setAuditWarning] = useState(null)
+  const [auditFilters, setAuditFilters] = useState({ search: '', action: '', entity: '' })
 
   // Hoja de vida
 
@@ -67,6 +152,8 @@ export default function AdminDashboard({ profile }) {
   useEffect(() => {
     if (!profile?.id) return
     loadData()
+    void loadReportes()
+    void loadAuditoria()
   }, [profile?.id])
 
   const loadData = async () => {
@@ -88,10 +175,35 @@ export default function AdminDashboard({ profile }) {
     setLoading(false)
   }
 
+  const loadReportes = async () => {
+    setLoadingReportes(true)
+    const { data, error } = await getAdminReports()
+    if (error) {
+      notify('error', error.message)
+    } else {
+      setReportes(data)
+    }
+    setLoadingReportes(false)
+  }
+
+  const loadAuditoria = async () => {
+    setLoadingAuditoria(true)
+    const { data, storage, warning } = await getAuditLogs({ limit: 250 })
+    setAuditoria(data ?? [])
+    setAuditStorage(storage)
+    setAuditWarning(warning)
+    setLoadingAuditoria(false)
+  }
+
 
   const notify = (type, msg) => {
     setStatus({ type, msg })
     setTimeout(() => setStatus(null), 5000)
+  }
+
+  const refreshInsights = () => {
+    void loadReportes()
+    void loadAuditoria()
   }
 
   // ── Hoja de vida ──────────────────────────────────────────────────────────
@@ -119,12 +231,13 @@ export default function AdminDashboard({ profile }) {
     e.preventDefault()
     if (!cursoForm.nivel || !cursoForm.letra) return notify('error', 'Completa nivel y letra.')
     if (!/^[A-Za-z]+$/.test(cursoForm.letra)) return notify('error', 'La letra solo puede contener letras (A, B, C...).')
-    const { error } = await crearCurso(cursoForm)
+    const { error } = await crearCurso({ ...cursoForm, actor: profile })
     if (error) return notify('error', error.message.includes('unique') ? 'Ese curso ya existe.' : error.message)
     notify('success', `Curso ${cursoForm.nivel}°${cursoForm.letra.toUpperCase()} creado.`)
     setCursoForm({ nivel: '', letra: '' })
     const { data } = await getCursos(); setCursos(data ?? [])
     const res = await getResumen(); setResumen(res)
+    refreshInsights()
   }
 
   // ── Eliminar curso ────────────────────────────────────────────────────────
@@ -134,11 +247,12 @@ export default function AdminDashboard({ profile }) {
       ? `¿Eliminar el curso ${curso.nivel}°${curso.letra}? ${alumnosEnCurso.length} alumno(s) quedarán sin curso asignado.`
       : `¿Eliminar el curso ${curso.nivel}°${curso.letra}?`
     if (!confirm(msg)) return
-    const { error } = await eliminarCurso(curso.id)
+    const { error } = await eliminarCurso(curso.id, profile)
     if (error) return notify('error', error.message)
     notify('success', `Curso ${curso.nivel}°${curso.letra} eliminado.`)
     const { data } = await getCursos(); setCursos(data ?? [])
     const res = await getResumen(); setResumen(res)
+    refreshInsights()
   }
 
   // ── Crear asignatura ──────────────────────────────────────────────────────
@@ -147,11 +261,12 @@ export default function AdminDashboard({ profile }) {
     if (!asigForm.nombre.trim()) return notify('error', 'Escribe el nombre.')
     const yaExiste = asignaturas.some(a => a.nombre.toLowerCase() === asigForm.nombre.trim().toLowerCase())
     if (yaExiste) return notify('error', `La asignatura "${asigForm.nombre}" ya existe.`)
-    const { error } = await crearAsignatura(asigForm)
+    const { error } = await crearAsignatura({ ...asigForm, actor: profile })
     if (error) return notify('error', error.message)
     notify('success', `Asignatura "${asigForm.nombre}" creada.`)
     setAsigForm({ nombre: '' })
     const { data } = await getAsignaturas(); setAsignaturas(data ?? [])
+    refreshInsights()
   }
 
   // ── Asignar profesor ──────────────────────────────────────────────────────
@@ -166,28 +281,31 @@ export default function AdminDashboard({ profile }) {
     const { profesorId, asignaturaId, cursoId } = asignForm
     if (!profesorId || !asignaturaId || !cursoId) return notify('error', 'Completa todos los campos.')
     if (yaExisteAsignacion) return notify('error', 'Esta asignación ya existe.')
-    const { error } = await asignarProfesor({ profesorId, asignaturaId, cursoId })
+    const { error } = await asignarProfesor({ profesorId, asignaturaId, cursoId, actor: profile })
     if (error) return notify('error', error.message)
     notify('success', 'Profesor asignado correctamente.')
     setAsignForm({ profesorId: '', asignaturaId: '', cursoId: '' })
     const { data } = await getAsignaciones(); setAsignaciones(data ?? [])
+    refreshInsights()
   }
 
   const handleEliminarAsig = async (id) => {
     if (!confirm('¿Eliminar esta asignación?')) return
-    const { error } = await eliminarAsignacion(id)
+    const { error } = await eliminarAsignacion(id, profile)
     if (error) return notify('error', error.message)
     notify('success', 'Asignación eliminada.')
     const { data } = await getAsignaciones(); setAsignaciones(data ?? [])
+    refreshInsights()
   }
 
   // ── Desactivar usuario ────────────────────────────────────────────────────
   const handleDesactivar = async (u) => {
     if (!confirm(`¿Deshabilitar a ${u.nombre}? No se puede deshacer.`)) return
-    const { error } = await desactivarUsuario(u.id)
+    const { error } = await desactivarUsuario(u.id, profile)
     if (error) return notify('error', error.message)
     notify('success', 'Usuario deshabilitado correctamente.')
     await loadData()
+    refreshInsights()
   }
 
   // ── Modificar nota ────────────────────────────────────────────────────────
@@ -195,11 +313,12 @@ export default function AdminDashboard({ profile }) {
     const nuevaNota = notaEditando?.id === detalleNotaId ? notaEditando.valor : valorActual
     if (!nuevaNota || isNaN(nuevaNota) || nuevaNota < 1 || nuevaNota > 7)
       return notify('error', 'La nota debe estar entre 1.0 y 7.0.')
-    const { error } = await modificarNota({ detalleNotaId, nota: nuevaNota })
+    const { error } = await modificarNota({ detalleNotaId, nota: nuevaNota, actor: profile })
     if (error) return notify('error', error.message)
     notify('success', 'Nota modificada correctamente.')
     setNotaEditando(null)
     await recargarHoja()
+    refreshInsights()
   }
 
   // ── Agregar anotación (admin) ─────────────────────────────────────────────
@@ -211,23 +330,26 @@ export default function AdminDashboard({ profile }) {
       adminId:     profile.id,
       tipo:        anotForm.tipo,
       descripcion: anotForm.descripcion,
+      actor:       profile,
     })
     if (error) return notify('error', error.message)
     notify('success', 'Anotación agregada.')
     setAnotForm({ tipo: 'positiva', descripcion: '' })
     await recargarHoja()
+    refreshInsights()
   }
 
   // ── Cambiar curso alumno ──────────────────────────────────────────────────
   const handleCambiarCurso = async () => {
     if (!cursoCambio) return notify('error', 'Selecciona un curso.')
     if (cursoCambio === alumnoSel.curso_id) return notify('error', 'El alumno ya está en ese curso.')
-    const { error } = await cambiarCursoAlumno({ alumnoId: alumnoSel.id, cursoId: cursoCambio })
+    const { error } = await cambiarCursoAlumno({ alumnoId: alumnoSel.id, cursoId: cursoCambio, actor: profile })
     if (error) return notify('error', error.message)
     notify('success', 'Curso actualizado correctamente.')
     await loadData()
     const alumnoActualizado = { ...alumnoSel, curso_id: cursoCambio }
     setAlumnoSel(alumnoActualizado)
+    refreshInsights()
   }
 
   const profesores = usuarios.filter(u => u.rol === 'profesor')
@@ -237,34 +359,54 @@ export default function AdminDashboard({ profile }) {
   const alumnosFiltrados = alumnos.filter(a =>
     a.nombre.toLowerCase().includes(busqueda.toLowerCase())
   )
+  const auditoriaFiltrada = auditoria.filter((log) => {
+    const search = auditFilters.search.trim().toLowerCase()
+    const matchesSearch = !search || [
+      log.actor_name,
+      log.action,
+      log.entity,
+      log.field_name,
+    ].some((value) => String(value ?? '').toLowerCase().includes(search))
+
+    const matchesAction = !auditFilters.action || log.action === auditFilters.action
+    const matchesEntity = !auditFilters.entity || log.entity === auditFilters.entity
+
+    return matchesSearch && matchesAction && matchesEntity
+  })
+  const auditActions = [...new Set(auditoria.map((log) => log.action).filter(Boolean))]
+  const auditEntities = [...new Set(auditoria.map((log) => log.entity).filter(Boolean))]
 
   if (loading) return <div className="loading-wrap"><div className="spinner" /> Cargando panel...</div>
 
   return (
 
-    <div>
+    <div className="admin-dashboard">
       {/* Stats */}
-      <div className="grid-4 section">
+      <div className="admin-kpi-grid section">
         {[
-          { icon: '👥', value: resumen?.alumnos ?? 0,    label: 'Alumnos',        cls: 'blue'  },
-          { icon: '👨‍🏫', value: resumen?.profesores ?? 0, label: 'Profesores',      cls: 'lime'  },
-          { icon: '🏫', value: resumen?.cursos ?? 0,     label: 'Cursos',          cls: 'green' },
-          { icon: '⚠️', value: alertas.length,           label: 'Alertas activas', cls: 'red'   },
+          { icon: '👥',         value: resumen?.alumnos ?? 0,    label: 'Alumnos',        cls: 'blue', emoji: true  },
+          { icon: '👨‍🏫',       value: resumen?.profesores ?? 0, label: 'Profesores',      cls: 'lime', emoji: true  },
+          { icon: '🏫',         value: resumen?.cursos ?? 0,     label: 'Cursos',          cls: 'green', emoji: true },
+          { icon: AlertIcon,    value: alertas.length,           label: 'Alertas activas', cls: 'red', urgent: true },
         ].map((s, i) => (
-          <div key={i} className="stat-card">
-            <div className={`stat-icon ${s.cls}`}>{s.icon}</div>
-            <div>
-              <div className="stat-value">{s.value}</div>
-              <div className="stat-label">{s.label}</div>
+          <div key={i} className={`admin-kpi-card ${s.urgent ? 'urgent' : ''}`}>
+            <div className={`admin-kpi-icon ${s.cls} ${s.emoji ? 'emoji' : ''}`}>
+              {s.emoji ? s.icon : <s.icon />}
+            </div>
+            <div className="admin-kpi-copy">
+              <div className="admin-kpi-value">{s.value}</div>
+              <div className="admin-kpi-label">{s.label}</div>
             </div>
           </div>
         ))}
       </div>
 
       {/* Tabs */}
-      <div className="tab-strip">
+      <div className="tab-strip admin-tab-strip">
         {[
           { key: 'alertas',  label: `Alertas (${alertas.length})` },
+          { key: 'reportes', label: 'Reportes' },
+          { key: 'auditoria', label: `Auditoría (${auditoria.length})` },
           { key: 'usuarios', label: 'Usuarios' },
           { key: 'usuarios_inactivos', label: 'Usuarios deshabilitados' },
 
@@ -272,7 +414,7 @@ export default function AdminDashboard({ profile }) {
           { key: 'asignar',  label: 'Asignar profesor' },
           { key: 'hoja',     label: 'Hoja de vida' },
         ].map(({ key, label }) => (
-          <button key={key} className={`tab-btn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
+          <button key={key} className={`tab-btn admin-tab-btn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
             {label}
           </button>
         ))}
@@ -282,8 +424,8 @@ export default function AdminDashboard({ profile }) {
 
       {/* ── Tab: Alertas ── */}
       {tab === 'alertas' && (
-        <div className="card">
-          <div className="card-header">
+        <div className="admin-alert-card">
+          <div className="card-header admin-alert-header">
             <div>
               <div className="card-title">Alertas activas</div>
               <div className="card-subtitle">Promedio &lt; 4.0 · Asistencia &lt; 85% · 3+ anotaciones negativas</div>
@@ -295,7 +437,7 @@ export default function AdminDashboard({ profile }) {
               <p>Sin alertas activas. Todo en orden.</p>
             </div>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap admin-alert-table-wrap">
               <table>
                 <thead>
                   <tr><th>Alumno</th><th>Curso</th><th>Promedio</th><th>Asistencia</th><th>Anot. neg.</th><th>Alertas</th><th></th></tr>
@@ -303,31 +445,34 @@ export default function AdminDashboard({ profile }) {
                 <tbody>
                   {alertas.map(a => (
                     <tr key={a.alumno_id}>
-                      <td><strong>{a.alumno}</strong></td>
-                      <td>{a.curso}</td>
+                      <td className="admin-cell-strong"><strong>{a.alumno}</strong></td>
+                      <td className="admin-cell-muted">{a.curso}</td>
                       <td>
                         {a.promedio_general != null
-                          ? <span className={`nota-pill ${getNotaClass(a.promedio_general)}`}>{a.promedio_general}</span>
-                          : <span className="badge default">Sin notas</span>}
+                          ? <span className={`admin-alert-value ${getAlertValueClass('promedio', a.promedio_general)}`}>{a.promedio_general}</span>
+                          : <span className="admin-alert-value muted">Sin notas</span>}
                       </td>
                       <td>
-                        <span className={`badge ${a.porcentaje_asistencia < 85 ? 'negativa' : 'positiva'}`}>
-                          {a.porcentaje_asistencia ?? '—'}%
+                        <span className={`admin-alert-value ${getAlertValueClass('asistencia', a.porcentaje_asistencia)}`}>
+                          {a.porcentaje_asistencia != null ? `${a.porcentaje_asistencia}%` : '—'}
                         </span>
                       </td>
                       <td>
-                        <span className={`badge ${a.anotaciones_negativas >= 3 ? 'negativa' : 'default'}`}>
+                        <span className={`admin-alert-value ${getAlertValueClass('conducta', a.anotaciones_negativas)}`}>
                           {a.anotaciones_negativas}
                         </span>
                       </td>
-                      <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {a.alerta_promedio   && <span className="badge negativa">Promedio</span>}
-                        {a.alerta_asistencia && <span className="badge negativa">Asistencia</span>}
-                        {a.alerta_conducta   && <span className="badge negativa">Conducta</span>}
+                      <td>
+                        <div className="admin-alert-badges">
+                          {a.alerta_promedio   && <span className="badge admin-badge-red">Promedio</span>}
+                          {a.alerta_asistencia && <span className="badge admin-badge-amber">Asistencia</span>}
+                          {a.alerta_conducta   && <span className="badge admin-badge-slate">Conducta</span>}
+                        </div>
                       </td>
                       <td>
-                        <button className="button ghost" style={{ fontSize: '.75rem', padding: '4px 10px' }}
+                        <button className="admin-link-button"
                           onClick={() => handleVerHoja(usuarios.find(u => u.id === a.alumno_id) ?? { id: a.alumno_id, nombre: a.alumno })}>
+                          <EyeIcon />
                           Ver hoja
                         </button>
                       </td>
@@ -337,6 +482,205 @@ export default function AdminDashboard({ profile }) {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Tab: Reportes ── */}
+      {tab === 'reportes' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Reportes generales</div>
+                <div className="card-subtitle">Resumen institucional, rendimiento por curso y exportación compatible con Excel/PDF.</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="button ghost" onClick={loadReportes}>Actualizar</button>
+                <button className="button ghost" onClick={() => { void exportAdminReportsToExcel(reportes) }} disabled={!reportes}>
+                  Exportar Excel
+                </button>
+                <button className="button primary" onClick={() => printAdminReport(reportes)} disabled={!reportes}>
+                  Imprimir / PDF
+                </button>
+              </div>
+            </div>
+
+            {loadingReportes && !reportes ? (
+              <div className="loading-wrap"><div className="spinner" /> Cargando reportes...</div>
+            ) : !reportes ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">📈</div>
+                <p>No se pudo cargar el resumen de reportes.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div className="admin-report-grid">
+                  {[
+                    { label: 'Promedio general', value: reportes.resumen.promedioGeneral ?? '—', hint: 'Todas las notas registradas' },
+                    { label: 'Asistencia general', value: reportes.resumen.asistenciaGeneral ? `${reportes.resumen.asistenciaGeneral}%` : '—', hint: 'Presentes y justificados' },
+                    { label: 'Evaluaciones del mes', value: reportes.resumen.evaluacionesMesActual ?? 0, hint: 'Mes calendario actual' },
+                    { label: 'Cobertura docente', value: reportes.resumen.coberturaDocente ? `${reportes.resumen.coberturaDocente}%` : '—', hint: 'Profesores con asignaciones' },
+                  ].map((item) => (
+                    <div key={item.label} className="admin-report-card">
+                      <span>{item.label}</span>
+                      <strong>{item.value}</strong>
+                      <small>{item.hint}</small>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="card" style={{ padding: 0, boxShadow: 'none' }}>
+                  <div className="card-header" style={{ padding: '22px 24px 0', borderBottom: 'none', marginBottom: 10 }}>
+                    <div>
+                      <div className="card-title">Rendimiento por curso</div>
+                      <div className="card-subtitle">Cruza alumnos activos, promedio, asistencia, alertas y asignaciones.</div>
+                    </div>
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr><th>Curso</th><th>Alumnos</th><th>Promedio</th><th>Asistencia</th><th>Alertas</th><th>Asignaciones</th></tr>
+                      </thead>
+                      <tbody>
+                        {reportes.rendimientoPorCurso.map((curso) => (
+                          <tr key={curso.id}>
+                            <td><strong>{curso.curso}</strong></td>
+                            <td>{curso.alumnos}</td>
+                            <td>{curso.promedio != null ? <span className={`admin-alert-value ${Number(curso.promedio) < 4 ? 'critical' : 'normal'}`}>{curso.promedio}</span> : '—'}</td>
+                            <td>{curso.asistencia != null ? <span className={`admin-alert-value ${Number(curso.asistencia) < 85 ? 'critical' : 'normal'}`}>{curso.asistencia}%</span> : '—'}</td>
+                            <td>{curso.alertas}</td>
+                            <td>{curso.asignaciones}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="card" style={{ padding: 0, boxShadow: 'none' }}>
+                  <div className="card-header" style={{ padding: '22px 24px 0', borderBottom: 'none', marginBottom: 10 }}>
+                    <div>
+                      <div className="card-title">Alertas destacadas del reporte</div>
+                      <div className="card-subtitle">Muestra inicial para respaldo rápido del estado académico.</div>
+                    </div>
+                  </div>
+                  {reportes.alertasDestacadas.length === 0 ? (
+                    <div className="empty-state">
+                      <div className="empty-state-icon">✅</div>
+                      <p>No hay alertas activas en este momento.</p>
+                    </div>
+                  ) : (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr><th>Alumno</th><th>Curso</th><th>Promedio</th><th>Asistencia</th><th>Anot. neg.</th></tr>
+                        </thead>
+                        <tbody>
+                          {reportes.alertasDestacadas.map((alerta) => (
+                            <tr key={alerta.alumno_id}>
+                              <td><strong>{alerta.alumno}</strong></td>
+                              <td>{alerta.curso}</td>
+                              <td>{alerta.promedio_general ?? '—'}</td>
+                              <td>{alerta.porcentaje_asistencia != null ? `${alerta.porcentaje_asistencia}%` : '—'}</td>
+                              <td>{alerta.anotaciones_negativas ?? 0}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Auditoría ── */}
+      {tab === 'auditoria' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Auditoría del sistema</div>
+                <div className="card-subtitle">Registra acciones ejecutadas desde los módulos de admin, profesor y PIE.</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="button ghost" onClick={loadAuditoria}>Actualizar</button>
+                <button className="button primary" onClick={() => { void downloadAuditExcel(auditoriaFiltrada) }} disabled={!auditoriaFiltrada.length}>
+                  Exportar Excel
+                </button>
+              </div>
+            </div>
+
+            {auditStorage !== 'supabase' && (
+              <div className="alert warning" style={{ marginBottom: 14 }}>
+                La auditoría está funcionando en modo {auditStorage === 'mixed' ? 'mixto' : 'local'}.
+                {auditWarning ? ` Motivo detectado: ${auditWarning}.` : ''}
+              </div>
+            )}
+
+            <div className="admin-audit-filters">
+              <input
+                className="form-input"
+                placeholder="Buscar por usuario, acción o módulo..."
+                value={auditFilters.search}
+                onChange={(e) => setAuditFilters((prev) => ({ ...prev, search: e.target.value }))}
+              />
+              <select
+                className="form-select"
+                value={auditFilters.action}
+                onChange={(e) => setAuditFilters((prev) => ({ ...prev, action: e.target.value }))}
+              >
+                <option value="">Todas las acciones</option>
+                {auditActions.map((action) => <option key={action} value={action}>{action}</option>)}
+              </select>
+              <select
+                className="form-select"
+                value={auditFilters.entity}
+                onChange={(e) => setAuditFilters((prev) => ({ ...prev, entity: e.target.value }))}
+              >
+                <option value="">Todos los módulos</option>
+                {auditEntities.map((entity) => <option key={entity} value={entity}>{entity}</option>)}
+              </select>
+            </div>
+
+            <div className="admin-audit-summary">
+              <span className="badge default">{auditoriaFiltrada.length} evento(s)</span>
+              <span className="badge blue">Origen: {auditStorage}</span>
+            </div>
+
+            {loadingAuditoria && !auditoria.length ? (
+              <div className="loading-wrap"><div className="spinner" /> Cargando auditoría...</div>
+            ) : auditoriaFiltrada.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">🧾</div>
+                <p>No hay eventos de auditoría con los filtros actuales.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Fecha</th><th>Usuario</th><th>Rol</th><th>Acción</th><th>Módulo</th><th>Campo</th><th>Anterior</th><th>Nuevo</th></tr>
+                  </thead>
+                  <tbody>
+                    {auditoriaFiltrada.map((log) => (
+                      <tr key={log.id}>
+                        <td>{formatDateTime(log.created_at)}</td>
+                        <td><strong>{log.actor_name ?? 'Sistema'}</strong></td>
+                        <td><span className="badge default">{log.actor_role ?? 'sistema'}</span></td>
+                        <td>{log.action ?? '—'}</td>
+                        <td>{log.entity ?? '—'}</td>
+                        <td>{log.field_name ?? '—'}</td>
+                        <td>{formatAuditValue(log.old_value)}</td>
+                        <td>{formatAuditValue(log.new_value)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -420,10 +764,11 @@ export default function AdminDashboard({ profile }) {
                         style={{ fontSize: '.75rem', padding: '4px 10px', color: 'var(--success)', borderColor: 'var(--success-border)' }}
                         onClick={async () => {
                           if (!confirm(`¿Reactivar a ${u.nombre}?`)) return
-                          const { error } = await reactivarUsuario(u.id)
+                          const { error } = await reactivarUsuario(u.id, profile)
                           if (error) return notify('error', error.message)
                           notify('success', 'Usuario reactivado correctamente.')
                           await loadData()
+                          refreshInsights()
                         }}>
                         Reactivar
                       </button>

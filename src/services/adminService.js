@@ -1,5 +1,6 @@
 // src/services/adminService.js
 import { supabase } from '../supabaseClient'
+import { writeAuditLog } from './auditService'
 
 // ── Alertas ───────────────────────────────────────────────────────────────────
 export async function getAlertas() {
@@ -115,7 +116,7 @@ export async function getHojaVidaAlumno(alumnoId) {
 }
 
 // ── Crear curso ───────────────────────────────────────────────────────────────
-export async function crearCurso({ nivel, letra }) {
+export async function crearCurso({ nivel, letra, actor }) {
   // Validar que letra solo tenga letras
   if (!/^[A-Za-z]+$/.test(letra)) {
     return { data: null, error: { message: 'La letra del curso solo puede contener letras (A, B, C...).' } }
@@ -125,53 +126,140 @@ export async function crearCurso({ nivel, letra }) {
     .insert({ nivel: Number(nivel), letra: letra.toUpperCase() })
     .select()
     .single()
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'crear',
+      entity: 'curso',
+      entityId: data.id,
+      newValue: { nivel: data.nivel, letra: data.letra },
+      metadata: { curso: `${data.nivel}°${data.letra}` },
+    })
+  }
   return { data, error }
 }
 
 // ── Eliminar curso ────────────────────────────────────────────────────────────
-export async function eliminarCurso(id) {
+export async function eliminarCurso(id, actor) {
+  const { data: previo } = await supabase
+    .from('cursos')
+    .select('id, nivel, letra')
+    .eq('id', id)
+    .maybeSingle()
+
   const { error } = await supabase
     .from('cursos')
     .delete()
     .eq('id', id)
+
+  if (!error && previo) {
+    await writeAuditLog({
+      actor,
+      action: 'eliminar',
+      entity: 'curso',
+      entityId: previo.id,
+      oldValue: previo,
+      metadata: { curso: `${previo.nivel}°${previo.letra}` },
+    })
+  }
   return { error }
 }
 
 // ── Crear asignatura ──────────────────────────────────────────────────────────
-export async function crearAsignatura({ nombre }) {
+export async function crearAsignatura({ nombre, actor }) {
   const { data, error } = await supabase
     .from('asignaturas')
     .insert({ nombre: nombre.trim() })
     .select()
     .single()
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'crear',
+      entity: 'asignatura',
+      entityId: data.id,
+      newValue: { nombre: data.nombre },
+    })
+  }
   return { data, error }
 }
 
 // ── Asignar profesor ──────────────────────────────────────────────────────────
-export async function asignarProfesor({ profesorId, asignaturaId, cursoId }) {
+export async function asignarProfesor({ profesorId, asignaturaId, cursoId, actor }) {
   const { data, error } = await supabase
     .from('profesor_asignatura')
     .insert({ profesor_id: profesorId, asignatura_id: asignaturaId, curso_id: cursoId })
     .select()
     .single()
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'crear',
+      entity: 'asignacion_profesor',
+      entityId: data.id,
+      newValue: {
+        profesor_id: data.profesor_id,
+        asignatura_id: data.asignatura_id,
+        curso_id: data.curso_id,
+      },
+    })
+  }
   return { data, error }
 }
 
 // ── Eliminar asignación ───────────────────────────────────────────────────────
-export async function eliminarAsignacion(id) {
+export async function eliminarAsignacion(id, actor) {
+  const { data: previo } = await supabase
+    .from('profesor_asignatura')
+    .select('id, profesor_id, asignatura_id, curso_id')
+    .eq('id', id)
+    .maybeSingle()
+
   const { error } = await supabase
     .from('profesor_asignatura')
     .delete()
     .eq('id', id)
+
+  if (!error && previo) {
+    await writeAuditLog({
+      actor,
+      action: 'eliminar',
+      entity: 'asignacion_profesor',
+      entityId: previo.id,
+      oldValue: previo,
+    })
+  }
   return { error }
 }
 
 // ── Desactivar usuario (soft delete) ─────────────────────────────────────────
-export async function desactivarUsuario(id) {
+export async function desactivarUsuario(id, actor) {
+  const { data: previo } = await supabase
+    .from('usuarios')
+    .select('id, nombre, rol, activo')
+    .eq('id', id)
+    .maybeSingle()
+
   const { error } = await supabase
     .from('usuarios')
     .update({ activo: false })
     .eq('id', id)
+
+  if (!error && previo) {
+    await writeAuditLog({
+      actor,
+      action: 'desactivar',
+      entity: 'usuario',
+      entityId: previo.id,
+      fieldName: 'activo',
+      oldValue: { activo: previo.activo },
+      newValue: { activo: false },
+      metadata: { nombre: previo.nombre, rol: previo.rol },
+    })
+  }
   return { error }
 }
 
@@ -187,28 +275,66 @@ export async function getUsuariosInactivos() {
 }
 
 // ── Re-activar usuario ────────────────────────────────────────────────────
-export async function reactivarUsuario(id) {
+export async function reactivarUsuario(id, actor) {
+  const { data: previo } = await supabase
+    .from('usuarios')
+    .select('id, nombre, rol, activo')
+    .eq('id', id)
+    .maybeSingle()
+
   const { error } = await supabase
     .from('usuarios')
     .update({ activo: true })
     .eq('id', id)
+
+  if (!error && previo) {
+    await writeAuditLog({
+      actor,
+      action: 'reactivar',
+      entity: 'usuario',
+      entityId: previo.id,
+      fieldName: 'activo',
+      oldValue: { activo: previo.activo },
+      newValue: { activo: true },
+      metadata: { nombre: previo.nombre, rol: previo.rol },
+    })
+  }
   return { error }
 }
 
 
 // ── Modificar nota (admin) ────────────────────────────────────────────────────
-export async function modificarNota({ detalleNotaId, nota }) {
+export async function modificarNota({ detalleNotaId, nota, actor }) {
+  const { data: previa } = await supabase
+    .from('detalle_nota')
+    .select('id, nota, alumno_id, evaluacion_id')
+    .eq('id', detalleNotaId)
+    .maybeSingle()
+
   const { data, error } = await supabase
     .from('detalle_nota')
     .update({ nota: Number(nota) })
     .eq('id', detalleNotaId)
     .select()
     .single()
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'editar',
+      entity: 'nota',
+      entityId: data.id,
+      fieldName: 'nota',
+      oldValue: previa ? { nota: previa.nota } : null,
+      newValue: { nota: data.nota },
+      metadata: { alumno_id: data.alumno_id, evaluacion_id: data.evaluacion_id },
+    })
+  }
   return { data, error }
 }
 
 // ── Agregar anotación (admin) ─────────────────────────────────────────────────
-export async function crearAnotacionAdmin({ alumnoId, adminId, tipo, descripcion }) {
+export async function crearAnotacionAdmin({ alumnoId, adminId, tipo, descripcion, actor }) {
   const { data, error } = await supabase
     .from('anotaciones')
     .insert({
@@ -219,16 +345,50 @@ export async function crearAnotacionAdmin({ alumnoId, adminId, tipo, descripcion
     })
     .select()
     .single()
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'crear',
+      entity: 'anotacion',
+      entityId: data.id,
+      newValue: {
+        alumno_id: data.alumno_id,
+        profesor_id: data.profesor_id,
+        tipo: data.tipo,
+      },
+      metadata: { origen: 'admin' },
+    })
+  }
   return { data, error }
 }
 
 // ── Cambiar curso de un alumno ────────────────────────────────────────────────
-export async function cambiarCursoAlumno({ alumnoId, cursoId }) {
+export async function cambiarCursoAlumno({ alumnoId, cursoId, actor }) {
+  const { data: previo } = await supabase
+    .from('usuarios')
+    .select('id, nombre, curso_id')
+    .eq('id', alumnoId)
+    .maybeSingle()
+
   const { data, error } = await supabase
     .from('usuarios')
     .update({ curso_id: cursoId })
     .eq('id', alumnoId)
     .select()
     .single()
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'editar',
+      entity: 'usuario_curso',
+      entityId: data.id,
+      fieldName: 'curso_id',
+      oldValue: { curso_id: previo?.curso_id ?? null },
+      newValue: { curso_id: data.curso_id ?? null },
+      metadata: { nombre: previo?.nombre ?? null },
+    })
+  }
   return { data, error }
 }
