@@ -185,6 +185,28 @@ export async function getAsistenciaAlumnoPie(alumnoId) {
   return { data, error }
 }
 
+// ── Notas alumno PIE (vista v_pie_notas) ───────────────────────────────
+export async function getNotasAlumnoPie(alumnoId) {
+  const { data, error } = await supabase
+    .from('v_pie_notas')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .order('fecha', { ascending: false })
+
+  return { data, error }
+}
+
+// ── Alertas alumno PIE (vista v_alertas) ───────────────────────────────
+export async function getAlertasAlumnoPie(alumnoId) {
+  const { data, error } = await supabase
+    .from('v_alertas')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .maybeSingle()
+
+  return { data, error }
+}
+
 
 
 

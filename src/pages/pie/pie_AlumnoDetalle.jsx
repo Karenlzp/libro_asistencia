@@ -10,6 +10,8 @@ import {
   getObservacionesPie,
   getRetirosPie,
   getResumenPieAlumno,
+  getNotasAlumnoPie,
+  getAlertasAlumnoPie,
   registrarRetornoPie,
 } from '../../services/pieService'
 
@@ -55,6 +57,8 @@ export default function PieAlumnoDetalle({ profile }) {
   const [asistencias, setAsistencias] = useState([])
   const [retiros, setRetiros] = useState([])
   const [informes, setInformes] = useState([])
+  const [notas, setNotas] = useState([])
+  const [alertas, setAlertas] = useState(null)
 
   const [informeForm, setInformeForm] = useState({
     titulo: '',
@@ -89,7 +93,7 @@ export default function PieAlumnoDetalle({ profile }) {
     setLoading(true)
     setStatus(null)
 
-    const [det, obs, anot, res, asi, ret, inf] = await Promise.all([
+    const [det, obs, anot, res, asi, ret, inf, notasData, alertasData] = await Promise.all([
       getAlumnoPieDetail(alumnoId),
       getObservacionesPie(alumnoId),
       getAnotacionesAlumno(alumnoId),
@@ -97,6 +101,8 @@ export default function PieAlumnoDetalle({ profile }) {
       getAsistenciaAlumnoPie(alumnoId),
       getRetirosPie(alumnoId),
       getInformesPie(alumnoId),
+      getNotasAlumnoPie(alumnoId),
+      getAlertasAlumnoPie(alumnoId),
     ])
 
     if (det.error) return notify('error', det.error.message)
@@ -116,6 +122,8 @@ export default function PieAlumnoDetalle({ profile }) {
     if (asi?.error) return notify('error', asi.error.message)
     if (ret.error) return notify('error', ret.error.message)
     if (inf.error) return notify('error', inf.error.message)
+    if (notasData?.error) return notify('error', notasData.error.message)
+    if (alertasData?.error) return notify('error', alertasData.error.message)
 
     setAlumno(det.data)
     setObservaciones(obs.data ?? [])
@@ -123,6 +131,8 @@ export default function PieAlumnoDetalle({ profile }) {
     setAsistencias(asi.data ?? [])
     setRetiros(ret.data ?? [])
     setInformes(inf.data ?? [])
+    setNotas(notasData.data ?? [])
+    setAlertas(alertasData.data ?? null)
     setLoading(false)
   }
 
@@ -130,7 +140,7 @@ export default function PieAlumnoDetalle({ profile }) {
   useEffect(() => {
     if (!profile?.id) return
     if (!alumnoId) return
-    load()
+    void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, alumnoId])
 
@@ -319,6 +329,8 @@ export default function PieAlumnoDetalle({ profile }) {
             { key: 'asistencia', label: `Asistencia (${asistencias.length})` },
             { key: 'retiros', label: `Retiros (${retiros.length})` },
             { key: 'informes', label: `Informes (${informes.length})` },
+            { key: 'notas', label: `Notas (${notas.length})` },
+            { key: 'alertas', label: `Alertas` },
           ].map(({ key, label }) => (
             <button key={key} className={`tab-btn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
               {label}
@@ -729,6 +741,144 @@ export default function PieAlumnoDetalle({ profile }) {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'notas' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Notas</div>
+                <div className="card-subtitle">Fechas, asignatura, evaluación y nota</div>
+              </div>
+            </div>
+
+            {notas.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">📝</div>
+                <p>No hay notas registradas para este alumno.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Asignatura</th>
+                      <th>Evaluación</th>
+                      <th>Nota</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {notas.map((n, idx) => {
+                      const notaNum = typeof n.nota === 'number' ? n.nota : Number(n.nota)
+                      const esNumero = !Number.isNaN(notaNum)
+
+                      const badgeBg = esNumero && notaNum < 4.0 ? 'var(--red)' : 'var(--green)'
+                      const badgeColor = 'white'
+
+                      return (
+                        <tr key={String(n.nota_id ?? n.id ?? idx)}>
+                          <td style={{ color: 'var(--muted)' }}>{formatFecha(n.fecha)}</td>
+                          <td>{n.asignatura ?? '—'}</td>
+                          <td>{n.evaluacion ?? '—'}</td>
+                          <td>
+                            <span
+                              className="badge"
+                              style={{
+                                background: badgeBg,
+                                color: badgeColor,
+                              }}
+                            >
+                              {esNumero ? notaNum.toFixed(1) : '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'alertas' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Alertas PIE</div>
+                <div className="card-subtitle">Indicadores de riesgo académico, asistencia y conducta</div>
+              </div>
+            </div>
+
+            {alertas == null ? (
+              <div className="empty-state" style={{ paddingTop: 4 }}>
+                <div className="empty-state-icon">✅</div>
+                <p>No existen alertas para este alumno.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                  <div style={{ padding: '10px 12px', background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)' }}>
+                    <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>Promedio general</div>
+                    <div style={{ fontWeight: 700, color: 'var(--gray-900)', marginTop: 4 }}>
+                      {alertas.promedio_general ?? '—'}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '10px 12px', background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)' }}>
+                    <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>% Asistencia</div>
+                    <div style={{ fontWeight: 700, color: 'var(--gray-900)', marginTop: 4 }}>
+                      {alertas.porcentaje_asistencia ?? '—'}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ padding: '10px 12px', background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)' }}>
+                  <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>Anotaciones negativas</div>
+                  <div style={{ fontWeight: 700, color: 'var(--gray-900)', marginTop: 4 }}>
+                    {alertas.anotaciones_negativas ?? '—'}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <span
+                    className="badge"
+                    style={{
+                      background: alertas.alerta_promedio === true ? 'var(--red)' : 'var(--green)',
+                      color: 'white',
+                    }}
+                  >
+                    {alertas.alerta_promedio === true ? 'Riesgo académico detectado' : 'Sin riesgo académico'}
+                  </span>
+
+                  <span
+                    className="badge"
+                    style={{
+                      background: alertas.alerta_asistencia === true ? 'var(--red)' : 'var(--green)',
+                      color: 'white',
+                    }}
+                  >
+                    {alertas.alerta_asistencia === true ? 'Riesgo de asistencia detectado' : 'Asistencia sin riesgos'}
+                  </span>
+
+                  <span
+                    className="badge"
+                    style={{
+                      background: alertas.alerta_conducta === true ? 'var(--red)' : 'var(--green)',
+                      color: 'white',
+                    }}
+                  >
+                    {alertas.alerta_conducta === true ? 'Riesgo conductual detectado' : 'Conducta sin riesgos'}
+                  </span>
+                </div>
               </div>
             )}
           </div>
