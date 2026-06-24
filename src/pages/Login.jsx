@@ -148,7 +148,7 @@ export default function Login() {
             </div>
             <div className="login-visual-summary">
               <div className="login-visual-summary-top">
-                <span className="login-visual-chip">Panel centralizado</span>
+                <span className="login-visual-chip">Indicador semanal</span>
                 <div className="login-visual-book">
                   <span />
                   <span />
