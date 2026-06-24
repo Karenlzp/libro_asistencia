@@ -190,3 +190,35 @@
     const { data, error } = await q
     return { data, error }
     }
+
+    // ── Historial de asistencia (por curso + asignatura) ──────────────────────
+export async function getHistorialAsistenciaProfesor({ profesorId, cursoId, asignaturaId }) {
+    if (!cursoId || !profesorId) return { data: [], error: null }
+
+    console.log('Historial asistencia params', {
+        profesorId,
+        cursoId,
+        asignaturaId
+    })
+
+    let q = supabase
+        .from('asistencia')
+        .select(`
+        fecha,
+        alumno_id,
+        estado,
+        usuarios!asistencia_alumno_id_fkey ( nombre )
+        `)
+        .eq('curso_id', cursoId)
+        .eq('profesor_id', profesorId)
+
+    if (asignaturaId) {
+        q = q.eq('asignatura_id', asignaturaId)
+    }
+
+    q = q.order('fecha', { ascending: false })
+
+    const { data, error } = await q
+    return { data, error }
+    }
+

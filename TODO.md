@@ -1,9 +1,5 @@
-- [x] Agregar en src/services/profesorService.js la función getObservacionesPorAlumno(alumnoId) ordenada por fecha descendente
-- [ ] Actualizar src/pages/profesor/profesor_Dashboard.jsx:
-  - [x] Importar getObservacionesPorAlumno
-  - [x] Mantener intacto el formulario actual de creación de observaciones
-  - [x] Agregar sección “Historial de observaciones” únicamente dentro del tab “observacion”
-  - [x] Cargar historial cuando cambie el alumno seleccionado (obsForm.alumnoId)
-  - [x] Mostrar fecha y contenido, y estado vacío amigable si no hay registros
-  - [x] Refrescar historial automáticamente luego de guardar una nueva observación sin recargar la página
-- [x] Verificar que no se modifican otras pestañas (Notas, Asistencia, Anotaciones, Retiros, Alertas)
+# TODO
+- [ ] Reemplazar `src/pages/profesor/profesor_Dashboard.jsx` por una versión reconstruida desde `return (` hasta el final para corregir balanceo de llaves/JSX sin cambiar lógica.
+- [ ] Ejecutar `npm run build` y confirmar que termina sin errores.
+- [ ] Reportar líneas/bloques rotos, correcciones aplicadas y resultado del build.
+
