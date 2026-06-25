@@ -14,6 +14,7 @@ import NotFound from './pages/NotFound'
 import AdminDashboard    from './pages/admin/admin_Dashboard'
 import AdminProfesores   from './pages/admin/AdminProfesores'
 import ProfesorDashboard from './pages/profesor/profesor_Dashboard'
+import ProfesorHorario from './pages/profesor/profesor_Horario'
 import ProfesorNuevaEvaluacion from './pages/profesor/ProfesorNuevaEvaluacion'
 import AlumnoDashboard   from './pages/alumno/alumno_Dashboard'
 
@@ -123,6 +124,17 @@ export default function App() {
             <ProtectedRoute session={session} profile={profile} requiredRole="profesor">
               <DashboardLayout profile={profile}>
                 <ProfesorDashboard profile={profile} />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/profesor/horario"
+          element={
+            <ProtectedRoute session={session} profile={profile} requiredRole="profesor">
+              <DashboardLayout profile={profile}>
+                <ProfesorHorario profile={profile} />
               </DashboardLayout>
             </ProtectedRoute>
           }

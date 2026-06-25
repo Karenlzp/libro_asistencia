@@ -252,9 +252,10 @@ export async function getAlertasAlumnoPie(alumnoId) {
     .from('v_alertas')
     .select('*')
     .eq('alumno_id', alumnoId)
-    .maybeSingle()
+    .limit(1)
 
-  return { data, error }
+  if (error) return { data: null, error }
+  return { data: Array.isArray(data) ? data[0] ?? null : data, error: null }
 }
 
 

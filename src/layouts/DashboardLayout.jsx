@@ -1,6 +1,8 @@
 // src/layouts/DashboardLayout.jsx
+import { useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { getNotifications, markAllNotificationsRead, subscribeNotifications } from '../services/notificationService'
 
 function HomeIcon() {
   return (
@@ -29,6 +31,17 @@ function PencilIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
         d="M16.86 3.49a2.1 2.1 0 0 1 2.97 2.97l-9.6 9.6a3 3 0 0 1-1.33.77l-3.4.97a.75.75 0 0 1-.93-.93l.97-3.4a3 3 0 0 1 .77-1.33l9.55-9.65Zm-9.08 9.65-.45.45a1.5 1.5 0 0 0-.38.65l-.53 1.85 1.85-.53a1.5 1.5 0 0 0 .65-.38l.45-.45-1.59-1.59Zm2.65.53 8.34-8.33a.6.6 0 0 0-.85-.85l-8.34 8.33 1.59 1.59Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M6 3.75a.75.75 0 0 1 .75.75v1.5h10.5V4.5a.75.75 0 0 1 1.5 0v1.5h.75A2.75 2.75 0 0 1 22 8.75v11.5A2.75 2.75 0 0 1 19.25 23H4.75A2.75 2.75 0 0 1 2 20.25V8.75A2.75 2.75 0 0 1 4.75 6H5V4.5a.75.75 0 0 1 .75-.75ZM4.5 8.75c0-.14.11-.25.25-.25h14.5c.14 0 .25.11.25.25v4.5H4.5v-4.5Zm0 6.5h15v5.0c0 .14-.11.25-.25.25H4.75a.25.25 0 0 1-.25-.25v-5Z"
         fill="currentColor"
       />
     </svg>
@@ -64,6 +77,7 @@ const NAV = {
   ],
   profesor: [
     { to: '/profesor', label: 'Inicio', icon: HomeIcon },
+    { to: '/profesor/horario', label: 'Horario', icon: CalendarIcon },
     { to: '/profesor/nueva-evaluacion', label: 'Nueva evaluacion', icon: PencilIcon },
   ],
   alumno: [{ to: '/alumno', label: 'Inicio', icon: HomeIcon }],
@@ -72,6 +86,25 @@ const NAV = {
 
 export default function DashboardLayout({ profile, children }) {
   const navigate = useNavigate()
+  const [notifications, setNotifications] = useState([])
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+
+  useEffect(() => {
+    if (profile?.rol !== 'profesor') return undefined
+    setNotifications(getNotifications())
+    const unsubscribe = subscribeNotifications(setNotifications)
+    return unsubscribe
+  }, [profile?.rol])
+
+  const unreadCount = notifications.filter((n) => !n.read).length
+
+  const handleToggleNotifications = () => {
+    if (!notificationsOpen && unreadCount > 0) {
+      markAllNotificationsRead()
+      setNotifications(getNotifications())
+    }
+    setNotificationsOpen((prev) => !prev)
+  }
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -139,6 +172,37 @@ export default function DashboardLayout({ profile, children }) {
             </h1>
             <p>Bienvenido, {profile?.nombre}.</p>
           </div>
+          {profile?.rol === 'profesor' && (
+            <div className="notification-shell">
+              <button className="notification-bell" onClick={handleToggleNotifications} aria-label="Notificaciones">
+                <svg viewBox="0 0 24 24" aria-hidden="true" width="20" height="20">
+                  <path
+                    d="M12 22a2.25 2.25 0 0 0 2.25-2.25h-4.5A2.25 2.25 0 0 0 12 22Zm6.75-6V11c0-3.31-2.15-6.1-5.25-6.82V3.5a1.5 1.5 0 0 0-3 0v.68C7.4 4.9 5.25 7.69 5.25 11v5l-1.5 1.5v.75h15v-.75L18.75 16Z"
+                    fill="currentColor"
+                  />
+                </svg>
+                {unreadCount > 0 && <span className="notification-bell-dot" />}
+              </button>
+              {notificationsOpen && (
+                <div className="notification-popover">
+                  <div className="notification-popover-header">Notificaciones PIE</div>
+                  {notifications.length === 0 ? (
+                    <div className="notification-empty">No hay notificaciones.</div>
+                  ) : (
+                    <div className="notification-list">
+                      {notifications.slice(0, 6).map((notification) => (
+                        <div key={notification.id} className="notification-item">
+                          <div className="notification-item-title">{notification.title}</div>
+                          <div className="notification-item-message">{notification.message}</div>
+                          <div className="notification-item-time">{new Date(notification.created_at).toLocaleString('es-CL')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </header>
 
         <main className={contentClass}>{children}</main>

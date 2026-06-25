@@ -134,7 +134,7 @@ export async function getProfesorAlumnoConducta({ alumnoId }) {
 export async function getProfesorAlumnoPieObservaciones({ alumnoId }) {
     const { data, error } = await supabase
         .from('pie_observaciones')
-        .select('id, observacion, created_at, fecha')
+        .select('id, tipo_intervencion, observacion, resultado, created_at, alumno_id')
         .eq('alumno_id', alumnoId)
         .order('created_at', { ascending: false })
 
@@ -144,7 +144,7 @@ export async function getProfesorAlumnoPieObservaciones({ alumnoId }) {
 export async function getProfesorAlumnoPieRetiros({ alumnoId }) {
     const { data, error } = await supabase
         .from('pie_retiros')
-        .select('id, alumno_id, motivo, tipo, estado, created_at, fecha_retorno, hora_retorno, fecha')
+        .select('id, motivo, tipo, estado, created_at, fecha_retorno, hora_retorno, alumno_id, curso_id, pie_id')
         .eq('alumno_id', alumnoId)
         .order('created_at', { ascending: false })
 
@@ -253,21 +253,41 @@ export async function getProfesorAlumnoNotas({ alumnoId }) {
 
     // ── Guardar nota (insert o update) ───────────────────────────────────────────
     export async function guardarNota({ evaluacionId, alumnoId, nota, actor }) {
-    const { data: previa } = await supabase
+    const { data: previa, error: previaError } = await supabase
         .from('detalle_nota')
         .select('id, nota')
         .eq('evaluacion_id', evaluacionId)
         .eq('alumno_id', alumnoId)
         .maybeSingle()
 
-    const { data, error } = await supabase
-        .from('detalle_nota')
-        .upsert(
-        { evaluacion_id: evaluacionId, alumno_id: alumnoId, nota: Number(nota) },
-        { onConflict: 'evaluacion_id,alumno_id' }
-        )
-        .select()
-        .single()
+    if (previaError) {
+        return { data: null, error: previaError }
+    }
+
+    const valores = { evaluacion_id: evaluacionId, alumno_id: alumnoId, nota: Number(nota) }
+    let data
+    let error
+
+    if (previa) {
+        const response = await supabase
+            .from('detalle_nota')
+            .update(valores)
+            .eq('id', previa.id)
+            .select()
+            .single()
+
+        data = response.data
+        error = response.error
+    } else {
+        const response = await supabase
+            .from('detalle_nota')
+            .insert(valores)
+            .select()
+            .single()
+
+        data = response.data
+        error = response.error
+    }
 
     if (!error && data) {
         await writeAuditLog({
@@ -281,6 +301,112 @@ export async function getProfesorAlumnoNotas({ alumnoId }) {
         metadata: { evaluacion_id: evaluacionId, alumno_id: alumnoId, origen: 'profesor' },
         })
     }
+    return { data, error }
+    }
+
+    // ── Eliminar nota ─────────────────────────────────────────────────────────────
+    export async function eliminarNota(detalleNotaId, actor) {
+    const { data: previo, error: previoError } = await supabase
+        .from('detalle_nota')
+        .select('id, nota, alumno_id, evaluacion_id')
+        .eq('id', detalleNotaId)
+        .maybeSingle()
+
+    if (previoError) {
+        return { error: previoError }
+    }
+
+    const { error } = await supabase
+        .from('detalle_nota')
+        .delete()
+        .eq('id', detalleNotaId)
+
+    if (!error && previo) {
+        await writeAuditLog({
+        actor,
+        action: 'eliminar',
+        entity: 'nota',
+        entityId: previo.id,
+        fieldName: 'nota',
+        oldValue: { nota: previo.nota },
+        newValue: null,
+        metadata: { evaluacion_id: previo.evaluacion_id, alumno_id: previo.alumno_id, origen: 'profesor' },
+        })
+    }
+
+    return { error }
+    }
+
+    // ── Promedios de asignaturas del profesor ──────────────────────────────────────
+    export async function getPromediosAsignaturasProfesor(profesorId) {
+    const { data, error } = await supabase
+        .from('detalle_nota')
+        .select(`
+        nota,
+        evaluaciones!inner(
+            asignaturas ( id, nombre ),
+            profesor_id
+        )
+        `)
+        .eq('evaluaciones.profesor_id', profesorId)
+
+    if (error) return { data: null, error }
+
+    const map = new Map()
+    for (const row of data ?? []) {
+        const asignatura = row?.evaluaciones?.asignaturas?.nombre ?? 'Sin asignatura'
+        const key = row?.evaluaciones?.asignaturas?.id ?? asignatura
+        const notaValor = Number(row.nota ?? 0)
+        if (!map.has(key)) {
+        map.set(key, { asignatura, total: notaValor, cantidad: 1 })
+        } else {
+        const actual = map.get(key)
+        actual.total += notaValor
+        actual.cantidad += 1
+        }
+    }
+
+    const promedios = Array.from(map.values()).map(item => ({
+        asignatura: item.asignatura,
+        promedio: Number((item.total / item.cantidad).toFixed(2)),
+        notas: item.cantidad,
+    }))
+
+    return { data: promedios, error: null }
+    }
+
+    // ── Editar anotación ─────────────────────────────────────────────────────────
+    export async function editarAnotacion({ anotacionId, tipo, descripcion, actor }) {
+    const { data: previo, error: previoError } = await supabase
+        .from('anotaciones')
+        .select('id, tipo, descripcion, alumno_id, profesor_id')
+        .eq('id', anotacionId)
+        .maybeSingle()
+
+    if (previoError) {
+        return { data: null, error: previoError }
+    }
+
+    const { data, error } = await supabase
+        .from('anotaciones')
+        .update({ tipo, descripcion })
+        .eq('id', anotacionId)
+        .select()
+        .single()
+
+    if (!error && data) {
+        await writeAuditLog({
+        actor,
+        action: 'editar',
+        entity: 'anotacion',
+        entityId: data.id,
+        fieldName: 'anotacion',
+        oldValue: { tipo: previo?.tipo, descripcion: previo?.descripcion },
+        newValue: { tipo: data.tipo, descripcion: data.descripcion },
+        metadata: { alumno_id: previo?.alumno_id, profesor_id: previo?.profesor_id, origen: 'profesor' },
+        })
+    }
+
     return { data, error }
     }
 
@@ -443,13 +569,14 @@ export async function getProfesorAlumnoNotas({ alumnoId }) {
     }
 
     // ── Historial de asistencia (por curso + asignatura) ──────────────────────
-export async function getHistorialAsistenciaProfesor({ profesorId, cursoId, asignaturaId }) {
+export async function getHistorialAsistenciaProfesor({ profesorId, cursoId, asignaturaId, fecha }) {
     if (!cursoId || !profesorId) return { data: [], error: null }
 
     console.log('Historial asistencia params', {
         profesorId,
         cursoId,
-        asignaturaId
+        asignaturaId,
+        fecha,
     })
 
     let q = supabase
@@ -465,6 +592,10 @@ export async function getHistorialAsistenciaProfesor({ profesorId, cursoId, asig
 
     if (asignaturaId) {
         q = q.eq('asignatura_id', asignaturaId)
+    }
+
+    if (fecha) {
+        q = q.eq('fecha', fecha)
     }
 
     q = q.order('fecha', { ascending: false })

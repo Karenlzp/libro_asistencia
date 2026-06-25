@@ -13,11 +13,13 @@ import {
   getAlertasPorCurso,
   crearEvaluacion,
   guardarNota,
+  eliminarNota,
+  getPromediosAsignaturasProfesor,
+  editarAnotacion,
   registrarAsistenciaMasiva,
   crearAnotacion,
   crearRetiro,
-  crearObservacion,
-  getObservacionesPorAlumno,
+  getProfesorAlumnoPieObservaciones,
   getRetirosPiePorAlumno,
   getHistorialAsistenciaProfesor,
 } from '../../services/profesorService'
@@ -42,6 +44,8 @@ export default function ProfesorDashboard({ profile }) {
   const [asignaturaId, setAsignaturaId] = useState('')
 
   const [searchAlumno, setSearchAlumno] = useState('')
+  const [alertasOpen, setAlertasOpen] = useState(true)
+  const [expandedAlertRows, setExpandedAlertRows] = useState([])
 
   const alumnosFiltrados = useMemo(() => {
     const q = searchAlumno.trim().toLowerCase()
@@ -114,6 +118,12 @@ export default function ProfesorDashboard({ profile }) {
   const [notasEval, setNotasEval] = useState([])
   const [notasInput, setNotasInput] = useState({})
   const [loadingNotas, setLoadingNotas] = useState(false)
+  const [promediosAsignaturas, setPromediosAsignaturas] = useState([])
+  const [loadingPromedios, setLoadingPromedios] = useState(false)
+  const [editingNotaAlumnoId, setEditingNotaAlumnoId] = useState(null)
+
+  const [editarAnotacionId, setEditarAnotacionId] = useState(null)
+  const [anotEditForm, setAnotEditForm] = useState({ tipo: 'positiva', descripcion: '' })
 
   const [fechaAsist, setFechaAsist] = useState(hoy)
   const [asistencia, setAsistencia] = useState({})
@@ -124,9 +134,9 @@ export default function ProfesorDashboard({ profile }) {
   const [retiroForm, setRetiroForm] = useState({ alumnoId: '' })
   const [retirosHist, setRetirosHist] = useState([])
   const [loadingRetirosHist, setLoadingRetirosHist] = useState(false)
-  const [obsForm, setObsForm] = useState({ alumnoId: '', contenido: '' })
-  const [observacionesHist, setObservacionesHist] = useState([])
-  const [loadingObservacionesHist, setLoadingObservacionesHist] = useState(false)
+  const [obsForm, setObsForm] = useState({ alumnoId: '' })
+  const [observacionesPie, setObservacionesPie] = useState([])
+  const [loadingObservacionesPie, setLoadingObservacionesPie] = useState(false)
 
   useEffect(() => {
     if (!profile?.id) return
@@ -137,14 +147,14 @@ export default function ProfesorDashboard({ profile }) {
   useEffect(() => {
     const run = async () => {
       if (!obsForm.alumnoId) {
-        setObservacionesHist([])
+        setObservacionesPie([])
         return
       }
-      setLoadingObservacionesHist(true)
-      const { data, error } = await getObservacionesPorAlumno(obsForm.alumnoId)
-      if (!error) setObservacionesHist(data ?? [])
-      else setObservacionesHist([])
-      setLoadingObservacionesHist(false)
+      setLoadingObservacionesPie(true)
+      const { data, error } = await getProfesorAlumnoPieObservaciones({ alumnoId: obsForm.alumnoId })
+      if (!error) setObservacionesPie(data ?? [])
+      else setObservacionesPie([])
+      setLoadingObservacionesPie(false)
     }
     run()
   }, [obsForm.alumnoId])
@@ -161,13 +171,14 @@ export default function ProfesorDashboard({ profile }) {
         profesorId: profile?.id,
         cursoId,
         asignaturaId: asignaturaId || undefined,
+        fecha: fechaAsist || undefined,
       })
       if (!error) setHistorialAsistencia(data ?? [])
       else setHistorialAsistencia([])
       setLoadingHistorialAsistencia(false)
     }
     run()
-  }, [tab, cursoId, asignaturaId, profile?.id])
+  }, [tab, cursoId, asignaturaId, profile?.id, fechaAsist])
 
   useEffect(() => {
     const run = async () => {
@@ -186,6 +197,17 @@ export default function ProfesorDashboard({ profile }) {
     }
     run()
   }, [retiroForm.alumnoId, cursoId])
+
+  useEffect(() => {
+    const run = async () => {
+      setLoadingPromedios(true)
+      const { data, error } = await getPromediosAsignaturasProfesor(profile.id)
+      if (!error) setPromediosAsignaturas(data ?? [])
+      else setPromediosAsignaturas([])
+      setLoadingPromedios(false)
+    }
+    if (profile?.id) run()
+  }, [profile?.id])
 
   const loadBase = async () => {
     setLoading(true)
@@ -263,12 +285,13 @@ export default function ProfesorDashboard({ profile }) {
     setLoadingNotas(true)
     const { data } = await getNotasPorEvaluacion(id)
     const notasMap = {}
-    for (const n of data ?? []) notasMap[n.alumno_id] = n.nota
+    for (const n of data ?? []) notasMap[n.alumno_id] = n
 
     const merged = alumnos.map(a => ({
       alumno_id: a.id,
       nombre: a.nombre,
-      nota: notasMap[a.id] ?? '',
+      nota: notasMap[a.id]?.nota ?? '',
+      detalleId: notasMap[a.id]?.id ?? null,
     }))
     setNotasEval(merged)
 
@@ -294,6 +317,8 @@ export default function ProfesorDashboard({ profile }) {
 
 
   const handleGuardarNotas = async () => {
+    if (!evalSelId) return notify('error', 'Selecciona una evaluación primero.')
+
     const pendientes = notasEval
       .filter(n => notasInput[n.alumno_id] !== '' && notasInput[n.alumno_id] != null)
       .map(n =>
@@ -307,8 +332,26 @@ export default function ProfesorDashboard({ profile }) {
 
     const resultados = await Promise.all(pendientes)
     const errores = resultados.filter(r => r.error)
-    if (errores.length) notify('error', `${errores.length} nota(s) no se pudieron guardar.`)
-    else notify('success', 'Notas guardadas correctamente.')
+    if (errores.length) {
+      notify('error', `${errores.length} nota(s) no se pudieron guardar.`)
+      return
+    }
+
+    notify('success', 'Notas guardadas correctamente.')
+    setEditingNotaAlumnoId(null)
+    await handleEvalChange(evalSelId)
+  }
+
+  const handleEliminarNota = async (detalleId, alumnoId) => {
+    if (!detalleId) return notify('error', 'No se puede eliminar una nota sin registro.')
+    const { error } = await eliminarNota(detalleId, profile)
+    if (error) {
+      notify('error', 'No se pudo eliminar la nota: ' + error.message)
+      return
+    }
+    setNotasInput(prev => ({ ...prev, [alumnoId]: '' }))
+    setNotasEval(prev => prev.map(n => n.alumno_id === alumnoId ? { ...n, nota: '', detalleId: null } : n))
+    notify('success', 'Nota eliminada correctamente.')
   }
 
   const handleGuardarAsistencia = async () => {
@@ -376,39 +419,38 @@ export default function ProfesorDashboard({ profile }) {
     setAnotaciones(data ?? [])
   }
 
-  // Retiros: ahora solo lectura (gestionados por PIE)
+  const handleEditarAnotacionClick = anot => {
+    setEditarAnotacionId(anot.id)
+    setAnotEditForm({ tipo: anot.tipo, descripcion: anot.descripcion ?? '' })
+  }
 
-  const handleCrearObservacion = async e => {
+  const handleCancelarEdicion = () => {
+    setEditarAnotacionId(null)
+    setAnotEditForm({ tipo: 'positiva', descripcion: '' })
+  }
+
+  const handleGuardarAnotacionEditada = async e => {
     e.preventDefault()
-    if (!obsForm.alumnoId || !obsForm.contenido) return notify('error', 'Selecciona alumno y escribe la observación.')
+    if (!editarAnotacionId) return
+    if (!anotEditForm.descripcion) return notify('error', 'Escribe la descripción de la anotación.')
 
-    const { error } = await crearObservacion({
-      alumnoId: obsForm.alumnoId,
-      profesorId: profile.id,
-      contenido: obsForm.contenido,
+    const { data, error } = await editarAnotacion({
+      anotacionId: editarAnotacionId,
+      tipo: anotEditForm.tipo,
+      descripcion: anotEditForm.descripcion,
       actor: profile,
     })
 
-    if (error) return notify('error', 'Error: ' + error.message)
+    if (error) return notify('error', 'No se pudo actualizar la anotación: ' + error.message)
 
-    notify('success', 'Observación guardada.')
-    const alumnoId = obsForm.alumnoId
-    setObsForm(p => ({ ...p, contenido: '' }))
-
-    setLoadingObservacionesHist(true)
-    const { data, error: errorHist } = await getObservacionesPorAlumno(alumnoId)
-    if (!errorHist) setObservacionesHist(data ?? [])
-    else setObservacionesHist([])
-    setLoadingObservacionesHist(false)
+    notify('success', 'Anotación actualizada.')
+    setEditarAnotacionId(null)
+    setAnotEditForm({ tipo: 'positiva', descripcion: '' })
+    const { data: nuevaLista } = await getAnotacionesProfesor(profile.id)
+    setAnotaciones(nuevaLista ?? [])
   }
 
-  if (loading) {
-    return (
-      <div className="loading-wrap">
-        <div className="spinner" /> Cargando panel...
-      </div>
-    )
-  }
+  // Retiros: ahora solo lectura (gestionados por PIE)
 
   const hoyDate = new Date()
   hoyDate.setHours(0, 0, 0, 0)
@@ -479,70 +521,154 @@ export default function ProfesorDashboard({ profile }) {
         </div>
       )}
 
+      {/* Lista de alumnos del curso */}
+      {cursoId && (
+        <div className="card section">
+          <div className="card-header">
+            <div>
+              <div className="card-title">Alumnos del curso</div>
+              <div className="card-subtitle">Lista de los alumnos del curso seleccionado</div>
+            </div>
+          </div>
+
+          {alumnosFiltrados.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">👥</div>
+              <p>No hay alumnos en este curso.</p>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Alumno</th>
+                    <th style={{ width: 130, textAlign: 'right' }}>Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {alumnosFiltrados.map(a => (
+                    <tr key={a.id}>
+                      <td>{a.nombre}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button
+                          className="button"
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '.78rem',
+                            background: 'var(--blue-accent)',
+                            color: '#ffffff',
+                            borderColor: 'transparent',
+                            boxShadow: '0 2px 8px rgba(49, 130, 206, 0.18)',
+                          }}
+                          onClick={() => handleGoAlumno(a.id)}
+                        >
+                          Ver detalle
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Alertas del curso */}
       {alertas.length > 0 && (
         <div className="card section" style={{ borderLeft: '3px solid var(--danger)' }}>
-          <div className="card-title" style={{ marginBottom: 12 }}>
-            Alertas en este curso
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div>
+              <div className="card-title">Alertas en este curso</div>
+              <div className="card-subtitle">Haz clic para ver los detalles de las alertas</div>
+            </div>
+            <button
+              className="button secondary"
+              style={{ fontSize: '.82rem', minWidth: 120 }}
+              onClick={() => setAlertasOpen(p => !p)}
+            >
+              {alertasOpen ? 'Ocultar alertas' : 'Mostrar alertas'}
+            </button>
           </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Alumno</th>
-                  <th>Promedio</th>
-                  <th>Asistencia</th>
-                  <th>Anot. neg.</th>
-                  <th>Alertas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {alertasFiltradas.length === 0 ? (
+          {alertasOpen && (
+            <div className="table-wrap">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', padding: 14 }}>
-                      No hay alertas que coincidan con tu búsqueda.
-                    </td>
+                    <th>Alumno</th>
+                    <th style={{ width: 120, textAlign: 'center' }}>Acción</th>
                   </tr>
-                ) : (
-                  alertasFiltradas.map(a => (
-                    <tr key={a.alumno_id}>
-                      <td>
-                        <strong
-                          onClick={() => handleGoAlumno(a.alumno_id)}
-                          style={{ cursor: 'pointer', color: 'var(--blue)', userSelect: 'none' }}
-                          title="Ver ficha"
-                        >
-                          {a.alumno}
-                        </strong>
-                      </td>
-                      <td>
-                        {a.promedio_general != null ? (
-                          <span className={`nota-pill ${a.promedio_general < 4 ? 'baja' : 'media'}`}>{a.promedio_general}</span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td>
-                        {a.porcentaje_asistencia != null ? (
-                          <span className={`badge ${a.porcentaje_asistencia < 85 ? 'negativa' : 'positiva'}`}>{a.porcentaje_asistencia}%</span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td>
-                        <span className={`badge ${a.anotaciones_negativas >= 3 ? 'negativa' : 'default'}`}>{a.anotaciones_negativas}</span>
-                      </td>
-                      <td style={{ display: 'flex', gap: 4 }}>
-                        {a.alerta_promedio && <span className="badge negativa">Promedio</span>}
-                        {a.alerta_asistencia && <span className="badge negativa">Asistencia</span>}
-                        {a.alerta_conducta && <span className="badge negativa">Conducta</span>}
+                </thead>
+                <tbody>
+                  {alertasFiltradas.length === 0 ? (
+                    <tr>
+                      <td colSpan={2} style={{ textAlign: 'center', padding: 14 }}>
+                        No hay alertas que coincidan con tu búsqueda.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    alertasFiltradas.flatMap(a => {
+                      const expanded = expandedAlertRows.includes(a.alumno_id)
+
+                      return [
+                        <tr key={`${a.alumno_id}-main`}>
+                          <td>
+                            <strong
+                              onClick={() => handleGoAlumno(a.alumno_id)}
+                              style={{ cursor: 'pointer', color: 'var(--blue)', userSelect: 'none' }}
+                              title="Ver ficha"
+                            >
+                              {a.alumno}
+                            </strong>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              className="button ghost"
+                              style={{ padding: '6px 10px', fontSize: '.78rem' }}
+                              onClick={() => {
+                                setExpandedAlertRows(prev =>
+                                  prev.includes(a.alumno_id)
+                                    ? prev.filter(id => id !== a.alumno_id)
+                                    : [...prev, a.alumno_id]
+                                )
+                              }}
+                            >
+                              {expanded ? 'Ocultar' : 'Ver alerta'}
+                            </button>
+                          </td>
+                        </tr>,
+                        expanded && (
+                          <tr key={`${a.alumno_id}-expanded`}>
+                            <td colSpan={2} style={{ padding: '14px 16px', background: 'rgba(255, 245, 245, 0.85)' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
+                                <div style={{ padding: 12, background: '#fff', borderRadius: 'var(--radius-sm)', border: '1px solid #f2d7d5' }}>
+                                  <div style={{ fontSize: '.72rem', color: 'var(--muted)' }}>Promedio general</div>
+                                  <div style={{ fontWeight: 700, marginTop: 4 }}>{a.promedio_general ?? '—'}</div>
+                                </div>
+                                <div style={{ padding: 12, background: '#fff', borderRadius: 'var(--radius-sm)', border: '1px solid #f2d7d5' }}>
+                                  <div style={{ fontSize: '.72rem', color: 'var(--muted)' }}>% Asistencia</div>
+                                  <div style={{ fontWeight: 700, marginTop: 4 }}>{a.porcentaje_asistencia != null ? `${a.porcentaje_asistencia}%` : '—'}</div>
+                                </div>
+                                <div style={{ padding: 12, background: '#fff', borderRadius: 'var(--radius-sm)', border: '1px solid #f2d7d5' }}>
+                                  <div style={{ fontSize: '.72rem', color: 'var(--muted)' }}>Anotaciones negativas</div>
+                                  <div style={{ fontWeight: 700, marginTop: 4 }}>{a.anotaciones_negativas ?? '—'}</div>
+                                </div>
+                              </div>
+                              <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {a.alerta_promedio && <span className="badge negativa">Alerta Promedio</span>}
+                                {a.alerta_asistencia && <span className="badge negativa">Alerta Asistencia</span>}
+                                {a.alerta_conducta && <span className="badge negativa">Alerta Conducta</span>}
+                              </div>
+                            </td>
+                          </tr>
+                        ),
+                      ]
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -574,7 +700,7 @@ export default function ProfesorDashboard({ profile }) {
           <div className="card-header">
             <div>
               <div className="card-title">Ingreso de notas</div>
-              <div className="card-subtitle">Selecciona una evaluación para ingresar o editar notas</div>
+              <div className="card-subtitle">Selecciona una evaluación para ingresar, editar o eliminar notas antes del cierre</div>
             </div>
           </div>
 
@@ -617,12 +743,16 @@ export default function ProfesorDashboard({ profile }) {
                       <thead>
                         <tr>
                           <th>Alumno</th>
-                          <th style={{ width: 160 }}>Nota (1.0 – 7.0)</th>
+                          <th style={{ width: 220 }}>Nota (1.0 – 7.0)</th>
+                          <th style={{ width: 120 }}>Acción</th>
                         </tr>
                       </thead>
                       <tbody>
                         {notasEval.map(n => (
-                          <tr key={n.alumno_id}>
+                          <tr
+                            key={n.alumno_id}
+                            style={editingNotaAlumnoId === n.alumno_id ? { background: 'rgba(43, 108, 176, 0.05)' } : undefined}
+                          >
                             <td>{n.nombre}</td>
                             <td>
                               <input
@@ -634,7 +764,18 @@ export default function ProfesorDashboard({ profile }) {
                                 style={{ width: 100 }}
                                 value={notasInput[n.alumno_id] ?? ''}
                                 onChange={e => setNotasInput(p => ({ ...p, [n.alumno_id]: e.target.value }))}
+                                disabled={editingNotaAlumnoId !== n.alumno_id}
                               />
+                            </td>
+                            <td>
+                              <button
+                                className="button ghost"
+                                style={{ padding: '6px 10px', fontSize: '.78rem' }}
+                                type="button"
+                                onClick={() => setEditingNotaAlumnoId(editingNotaAlumnoId === n.alumno_id ? null : n.alumno_id)}
+                              >
+                                {editingNotaAlumnoId === n.alumno_id ? 'Cancelar' : 'Editar'}
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -642,11 +783,38 @@ export default function ProfesorDashboard({ profile }) {
                     </table>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-                    <button className="button primary" onClick={handleGuardarNotas}>
-                      Guardar notas
-                    </button>
-                  </div>
+                  <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+                  {loadingPromedios ? (
+                    <div className="stat-card" style={{ padding: '14px' }}>
+                      <div style={{ color: 'var(--muted)' }}>Cargando promedios por asignatura…</div>
+                    </div>
+                  ) : promediosAsignaturas.length > 0 ? (
+                    promediosAsignaturas.map((p) => (
+                      <div key={p.asignatura} className="stat-card" style={{ padding: '14px' }}>
+                        <div style={{ fontSize: '.8rem', color: 'var(--muted)', marginBottom: 8 }}>{p.asignatura}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>{p.promedio}</div>
+                          <span className="badge default">{p.notas} nota{p.notas === 1 ? '' : 's'}</span>
+                        </div>
+                        <div style={{ marginTop: 8, color: 'var(--gray-600)', fontSize: '.82rem' }}>
+                          Promedio para esta asignatura
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="stat-card" style={{ padding: '14px' }}>
+                      <div style={{ color: 'var(--muted)' }}>No hay notas registradas aún para calcular promedios.</div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button className="button primary" onClick={handleGuardarNotas}>
+                    Guardar notas
+                  </button>
+                </div>
+              </div>
                 </>
               )}
 
@@ -822,6 +990,20 @@ export default function ProfesorDashboard({ profile }) {
             </div>
           </div>
 
+          <div style={{ marginBottom: 20, display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Fecha</label>
+              <input
+                className="form-input"
+                type="date"
+                style={{ maxWidth: 200 }}
+                value={fechaAsist}
+                max={hoy}
+                onChange={e => setFechaAsist(e.target.value)}
+              />
+            </div>
+          </div>
+
           {!cursoId ? (
             <div className="empty-state">
               <div className="empty-state-icon">🏫</div>
@@ -926,6 +1108,40 @@ export default function ProfesorDashboard({ profile }) {
               <div className="card-subtitle">{anotaciones.length} registradas</div>
             </div>
 
+            {editarAnotacionId && (
+              <div className="card" style={{ marginBottom: 20, padding: '18px 22px' }}>
+                <div className="card-title">Editar anotación</div>
+                <form className="form-grid" onSubmit={handleGuardarAnotacionEditada}>
+                  <div className="form-group">
+                    <label className="form-label">Tipo</label>
+                    <select
+                      className="form-select"
+                      value={anotEditForm.tipo}
+                      onChange={e => setAnotEditForm(p => ({ ...p, tipo: e.target.value }))}
+                    >
+                      <option value="positiva">Positiva</option>
+                      <option value="negativa">Negativa</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group full">
+                    <label className="form-label">Descripción</label>
+                    <input
+                      className="form-input"
+                      value={anotEditForm.descripcion}
+                      onChange={e => setAnotEditForm(p => ({ ...p, descripcion: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-actions" style={{ gap: 10 }}>
+                    <button className="button primary" type="submit">Guardar cambios</button>
+                    <button className="button secondary" type="button" onClick={handleCancelarEdicion}>Cancelar</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
             {anotaciones.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-icon">💬</div>
@@ -940,6 +1156,7 @@ export default function ProfesorDashboard({ profile }) {
                       <th>Tipo</th>
                       <th>Descripción</th>
                       <th>Fecha</th>
+                      <th style={{ width: 120 }}>Acción</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -951,6 +1168,15 @@ export default function ProfesorDashboard({ profile }) {
                         </td>
                         <td>{a.descripcion}</td>
                         <td>{a.fecha}</td>
+                        <td>
+                          <button
+                            className="button ghost"
+                            style={{ padding: '6px 10px', fontSize: '.78rem' }}
+                            onClick={() => handleEditarAnotacionClick(a)}
+                          >
+                            Editar
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1016,7 +1242,6 @@ export default function ProfesorDashboard({ profile }) {
                   <table>
                     <thead>
                       <tr>
-                        <th>Alumno</th>
                         <th>Tipo</th>
                         <th>Motivo</th>
                         <th>Estado</th>
@@ -1028,9 +1253,6 @@ export default function ProfesorDashboard({ profile }) {
                     <tbody>
                       {retirosHist.map(r => (
                         <tr key={r.id}>
-                          <td>
-                            <strong>{r.alumno_id}</strong>
-                          </td>
                           <td>
                             <span className="badge default">{r.tipo}</span>
                           </td>
@@ -1056,14 +1278,20 @@ export default function ProfesorDashboard({ profile }) {
       {tab === 'observacion' && (
         <div className="card">
           <div className="card-header">
-            <div className="card-title">Agregar observación</div>
-            <div className="card-subtitle">Queda registrada en la hoja de vida del alumno</div>
+            <div>
+              <div className="card-title">Historial de observaciones PIE</div>
+              <div className="card-subtitle">Selecciona un alumno para ver las observaciones registradas por PIE.</div>
+            </div>
           </div>
 
-          <form className="form-grid" onSubmit={handleCrearObservacion}>
-            <div className="form-group">
+          <div className="form-grid" style={{ marginBottom: 20 }}>
+            <div className="form-group" style={{ flex: 1, minWidth: 260 }}>
               <label className="form-label">Alumno</label>
-              <select className="form-select" value={obsForm.alumnoId} onChange={e => setObsForm(p => ({ ...p, alumnoId: e.target.value }))} required>
+              <select
+                className="form-select"
+                value={obsForm.alumnoId}
+                onChange={e => setObsForm(p => ({ ...p, alumnoId: e.target.value }))}
+              >
                 <option value="">{alumnos.length ? 'Elegir alumno' : 'Selecciona un curso primero'}</option>
                 {alumnosFiltrados.map(a => (
                   <option key={a.id} value={a.id}>
@@ -1072,60 +1300,41 @@ export default function ProfesorDashboard({ profile }) {
                 ))}
               </select>
             </div>
-
-            <div className="form-group full">
-              <label className="form-label">Observación</label>
-              <textarea
-                className="form-input"
-                rows={4}
-                style={{ resize: 'vertical' }}
-                placeholder="Escribe la observación para la hoja de vida…"
-                value={obsForm.contenido}
-                onChange={e => setObsForm(p => ({ ...p, contenido: e.target.value }))}
-                required
-              />
-            </div>
-
-            <div className="form-actions">
-              <button className="button primary" type="submit">
-                Guardar observación
-              </button>
-            </div>
-          </form>
+          </div>
 
           <div style={{ marginTop: 20 }}>
-            <div className="card-title" style={{ marginBottom: 10 }}>
-              Historial de observaciones
-            </div>
-
             {!obsForm.alumnoId ? (
               <div className="empty-state" style={{ margin: 0 }}>
                 <div className="empty-state-icon">🗂️</div>
-                <p>Selecciona un alumno para ver su historial.</p>
+                <p>Selecciona un alumno para ver las observaciones registradas por PIE.</p>
               </div>
-            ) : loadingObservacionesHist ? (
+            ) : loadingObservacionesPie ? (
               <div className="loading-wrap">
                 <div className="spinner" />
               </div>
-            ) : observacionesHist.length === 0 ? (
+            ) : observacionesPie.length === 0 ? (
               <div className="empty-state" style={{ margin: 0 }}>
                 <div className="empty-state-icon">💬</div>
-                <p>Aún no hay observaciones para este alumno.</p>
+                <p>No hay observaciones PIE registradas para este alumno.</p>
               </div>
             ) : (
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th style={{ width: 140 }}>Fecha</th>
-                      <th>Contenido</th>
+                      <th style={{ width: 120 }}>Fecha</th>
+                      <th>Intervención</th>
+                      <th>Observación</th>
+                      <th>Resultado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {observacionesHist.map(o => (
+                    {observacionesPie.map(o => (
                       <tr key={o.id}>
-                        <td>{o.fecha}</td>
-                        <td style={{ whiteSpace: 'pre-wrap' }}>{o.contenido}</td>
+                        <td>{o.created_at ? String(o.created_at).slice(0, 10) : '—'}</td>
+                        <td>{o.tipo_intervencion ?? '—'}</td>
+                        <td style={{ whiteSpace: 'pre-wrap' }}>{o.observacion ?? '—'}</td>
+                        <td>{o.resultado ?? '—'}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -451,8 +451,10 @@ export default function ProfesorAlumnoFichaIntegral({ profile }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {pieObservaciones.map(o => (
                   <div key={o.id} style={{ padding: '14px 16px', background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--blue)' }}>
-                    <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>{formatFecha(o.created_at ?? o.fecha)}</div>
+                    <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>{formatFecha(o.created_at)}</div>
+                    <div style={{ fontWeight: 700 }}>{o.tipo_intervencion ?? 'Observación'}</div>
                     <div style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>{o.observacion ?? '—'}</div>
+                    <div style={{ marginTop: 6, color: 'var(--muted)' }}><strong>Resultado:</strong> {o.resultado ?? '—'}</div>
                   </div>
                 ))}
               </div>
@@ -488,10 +490,10 @@ export default function ProfesorAlumnoFichaIntegral({ profile }) {
                   <tbody>
                     {pieRetiros.map(r => (
                       <tr key={r.id}>
-                        <td style={{ color: 'var(--muted)' }}>{formatFecha(r.created_at ?? r.fecha)}</td>
+                        <td style={{ color: 'var(--muted)' }}>{formatFecha(r.created_at)}</td>
                         <td>{r.motivo ?? '—'}</td>
                         <td>
-                          <span className={`badge ${String(r.estado) === 'activo' ? 'negativa' : 'default'}`}>
+                          <span className={`badge ${r.estado === 'retornado' ? 'positiva' : 'negativa'}`}>
                             {r.estado ?? '—'}
                           </span>
                         </td>
