@@ -23,6 +23,7 @@ import {
   getRetirosPiePorAlumno,
   getHistorialAsistenciaProfesor,
 } from '../../services/profesorService'
+import { getHorariosProfesor } from '../../services/horarioService'
 
 const hoy = new Date().toISOString().slice(0, 10)
 
@@ -31,6 +32,9 @@ export default function ProfesorDashboard({ profile }) {
 
   const [historialAsistencia, setHistorialAsistencia] = useState([])
   const [loadingHistorialAsistencia, setLoadingHistorialAsistencia] = useState(false)
+
+  const [horariosProfesor, setHorariosProfesor] = useState([])
+  const [loadingHorariosProfesor, setLoadingHorariosProfesor] = useState(false)
 
   const [cursoAsig, setCursoAsig] = useState([])
   const [alumnos, setAlumnos] = useState([])
@@ -179,6 +183,19 @@ export default function ProfesorDashboard({ profile }) {
     }
     run()
   }, [tab, cursoId, asignaturaId, profile?.id, fechaAsist])
+
+  useEffect(() => {
+    const run = async () => {
+      if (tab !== 'horarios') return
+      if (!profile?.id) return
+      setLoadingHorariosProfesor(true)
+      const { data, error } = await getHorariosProfesor({ profesorId: profile.id })
+      if (!error) setHorariosProfesor(data ?? [])
+      else setHorariosProfesor([])
+      setLoadingHorariosProfesor(false)
+    }
+    run()
+  }, [tab, profile?.id])
 
   useEffect(() => {
     const run = async () => {
@@ -678,6 +695,7 @@ export default function ProfesorDashboard({ profile }) {
           { key: 'notas', label: 'Notas' },
           { key: 'asistencia', label: 'Asistencia' },
           { key: 'historial_asistencia', label: 'Historial Asistencia' },
+          { key: 'horarios', label: 'Horarios' },
           { key: 'anotaciones', label: 'Anotaciones' },
           { key: 'retiros', label: 'Retiros' },
           { key: 'observacion', label: 'Observaciones' },
@@ -1041,6 +1059,45 @@ export default function ProfesorDashboard({ profile }) {
                           <span className="badge default">{r.estado ?? '—'}</span>
                         )}
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'horarios' && (
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <div className="card-title">Horario</div>
+              <div className="card-subtitle">Bloques asignados a tu usuario</div>
+            </div>
+          </div>
+
+          {loadingHorariosProfesor ? (
+            <div className="loading-wrap"><div className="spinner" /> Cargando horario...</div>
+          ) : horariosProfesor.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">📅</div>
+              <p>No hay bloques asignados.</p>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Día</th><th>Horario</th><th>Curso</th><th>Asignatura</th><th>Sala</th></tr>
+                </thead>
+                <tbody>
+                  {horariosProfesor.map((h) => (
+                    <tr key={h.id}>
+                      <td>{h.dia ?? '—'}</td>
+                      <td>{h.hora_inicio ?? '—'} - {h.hora_fin ?? '—'}</td>
+                      <td>{h.cursos ? `${h.cursos.nivel}°${h.cursos.letra}` : '—'}</td>
+                      <td>{h.asignaturas?.nombre ?? '—'}</td>
+                      <td>{h.sala ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

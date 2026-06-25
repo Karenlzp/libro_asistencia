@@ -1,6 +1,20 @@
 // src/services/adminService.js
 import { supabase } from '../supabaseClient'
+import { createClient } from '@supabase/supabase-js'
 import { writeAuditLog } from './auditService'
+
+function createEphemeralAuthClient() {
+  const url = import.meta.env.VITE_SUPABASE_URL
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: false,
+      storageKey: `tmp-admin-create-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    },
+  })
+}
 
 // ── Alertas ───────────────────────────────────────────────────────────────────
 export async function getAlertas() {
@@ -29,13 +43,27 @@ export async function getResumen() {
 
 // ── Lista de usuarios (solo activos) ─────────────────────────────────────────
 export async function getUsuarios() {
-  const { data, error } = await supabase
+  const primary = await supabase
     .from('usuarios')
-    .select(`id, nombre, rol, activo, created_at, cursos ( nivel, letra )`)
+    .select(`id, nombre, email, rol, activo, created_at, curso_id, cursos ( nivel, letra )`)
     .eq('activo', true)
     .order('rol')
     .order('nombre')
-  return { data, error }
+
+  if (!primary.error) return { data: primary.data, error: null }
+
+  const msg = String(primary.error.message ?? '')
+  if (msg.toLowerCase().includes('column') && msg.toLowerCase().includes('email') && msg.toLowerCase().includes('does not exist')) {
+    const fallback = await supabase
+      .from('usuarios')
+      .select(`id, nombre, rol, activo, created_at, curso_id, cursos ( nivel, letra )`)
+      .eq('activo', true)
+      .order('rol')
+      .order('nombre')
+    return { data: fallback.data ?? [], error: null }
+  }
+
+  return { data: [], error: primary.error }
 }
 
 // ── Lista de cursos ───────────────────────────────────────────────────────────
@@ -133,6 +161,40 @@ export async function crearCurso({ nivel, letra, actor }) {
       action: 'crear',
       entity: 'curso',
       entityId: data.id,
+      newValue: { nivel: data.nivel, letra: data.letra },
+      metadata: { curso: `${data.nivel}°${data.letra}` },
+    })
+  }
+  return { data, error }
+}
+
+export async function actualizarCurso({ id, nivel, letra, actor }) {
+  if (!id) return { data: null, error: { message: 'Curso inválido.' } }
+  if (!/^[A-Za-z]+$/.test(letra)) {
+    return { data: null, error: { message: 'La letra del curso solo puede contener letras (A, B, C...).' } }
+  }
+
+  const { data: previo } = await supabase
+    .from('cursos')
+    .select('id, nivel, letra')
+    .eq('id', id)
+    .maybeSingle()
+
+  const { data, error } = await supabase
+    .from('cursos')
+    .update({ nivel: Number(nivel), letra: String(letra).trim().toUpperCase() })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'editar',
+      entity: 'curso',
+      entityId: data.id,
+      fieldName: 'curso',
+      oldValue: previo ? { nivel: previo.nivel, letra: previo.letra } : null,
       newValue: { nivel: data.nivel, letra: data.letra },
       metadata: { curso: `${data.nivel}°${data.letra}` },
     })
@@ -265,12 +327,157 @@ export async function desactivarUsuario(id, actor) {
 
 // ── Lista de usuarios deshabilitados ─────────────────────────────────────
 export async function getUsuariosInactivos() {
-  const { data, error } = await supabase
+  const primary = await supabase
     .from('usuarios')
-    .select(`id, nombre, rol, activo, created_at, cursos ( nivel, letra )`)
+    .select(`id, nombre, email, rol, activo, created_at, curso_id, cursos ( nivel, letra )`)
     .eq('activo', false)
     .order('rol')
     .order('nombre')
+
+  if (!primary.error) return { data: primary.data, error: null }
+
+  const msg = String(primary.error.message ?? '')
+  if (msg.toLowerCase().includes('column') && msg.toLowerCase().includes('email') && msg.toLowerCase().includes('does not exist')) {
+    const fallback = await supabase
+      .from('usuarios')
+      .select(`id, nombre, rol, activo, created_at, curso_id, cursos ( nivel, letra )`)
+      .eq('activo', false)
+      .order('rol')
+      .order('nombre')
+    return { data: fallback.data ?? [], error: null }
+  }
+
+  return { data: [], error: primary.error }
+}
+
+export async function actualizarUsuarioPerfil({ id, nombre, email, rol, cursoId, actor }) {
+  const { data: previo, error: prevError } = await supabase
+    .from('usuarios')
+    .select('id, nombre, email, rol, curso_id')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (prevError) return { data: null, error: prevError }
+  if (!previo) return { data: null, error: { message: 'Usuario no encontrado.' } }
+
+  const normalizedRol = rol ? String(rol).trim().toLowerCase() : null
+  const nextRol = normalizedRol ?? previo.rol
+  const nextCursoId = nextRol === 'alumno' ? (cursoId ?? previo.curso_id ?? null) : null
+
+  if (nextRol === 'alumno' && !nextCursoId) {
+    return { data: null, error: { message: 'El rol alumno requiere un curso asignado.' } }
+  }
+
+  const payload = {
+    nombre: nombre?.trim() ? nombre.trim() : previo.nombre,
+    email: email?.trim() ? email.trim().toLowerCase() : (previo.email ?? null),
+    rol: nextRol,
+    curso_id: nextCursoId,
+  }
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update(payload)
+    .eq('id', id)
+    .select('id, nombre, email, rol, curso_id')
+    .single()
+
+  if (error) {
+    const msg = String(error.message ?? '')
+    if (msg.toLowerCase().includes('column') && msg.toLowerCase().includes('email') && msg.toLowerCase().includes('does not exist')) {
+      return { data: null, error: { message: 'Falta la columna email en la tabla usuarios. Ejecuta supabase/usuarios_email.sql en Supabase.' } }
+    }
+  }
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'editar',
+      entity: 'usuario',
+      entityId: data.id,
+      fieldName: 'perfil',
+      oldValue: { nombre: previo.nombre, email: previo.email ?? null, rol: previo.rol, curso_id: previo.curso_id ?? null },
+      newValue: { nombre: data.nombre, email: data.email ?? null, rol: data.rol, curso_id: data.curso_id ?? null },
+      metadata: { rol: data.rol },
+    })
+  }
+
+  return { data, error }
+}
+
+export async function crearUsuario({ nombre, email, password, rol, cursoId, actor }) {
+  const correo = String(email ?? '').trim().toLowerCase()
+  const displayName = String(nombre ?? '').trim()
+
+  if (!correo) return { data: null, error: { message: 'Debes ingresar un correo.' } }
+  if (!displayName) return { data: null, error: { message: 'Debes ingresar un nombre.' } }
+  if (!password || String(password).length < 6) return { data: null, error: { message: 'La contraseña debe tener al menos 6 caracteres.' } }
+  if (!rol) return { data: null, error: { message: 'Debes seleccionar un rol.' } }
+
+  const authClient = createEphemeralAuthClient()
+  const { data: authData, error: authError } = await authClient.auth.signUp({
+    email: correo,
+    password: String(password),
+  })
+
+  if (authError) {
+    const msg = String(authError.message ?? '').toLowerCase()
+    if (msg.includes('rate limit') && msg.includes('email')) {
+      return {
+        data: null,
+        error: {
+          message:
+            'Supabase bloqueó el envío de correos por límite (email rate limit exceeded). ' +
+            'Soluciones: espera unos minutos e intenta de nuevo, usa un correo real, o desactiva temporalmente la confirmación por correo en Supabase (Auth) para pruebas.',
+        },
+      }
+    }
+    return { data: null, error: authError }
+  }
+
+  const userId = authData?.user?.id
+  if (!userId) return { data: null, error: { message: 'No se pudo crear el usuario en Auth.' } }
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .insert({
+      id: userId,
+      nombre: displayName,
+      email: correo,
+      rol,
+      curso_id: rol === 'alumno' ? (cursoId || null) : null,
+      activo: true,
+    })
+    .select('id, nombre, email, rol, curso_id, activo')
+    .single()
+
+  if (error) {
+    const msg = String(error.message ?? '')
+    if (msg.toLowerCase().includes('column') && msg.toLowerCase().includes('email') && msg.toLowerCase().includes('does not exist')) {
+      return { data: null, error: { message: 'Falta la columna email en la tabla usuarios. Ejecuta supabase/usuarios_email.sql en Supabase.' } }
+    }
+  }
+
+  if (!error && data) {
+    await writeAuditLog({
+      actor,
+      action: 'crear',
+      entity: 'usuario',
+      entityId: data.id,
+      newValue: { nombre: data.nombre, email: data.email ?? null, rol: data.rol, curso_id: data.curso_id ?? null },
+      metadata: { origen: 'admin' },
+    })
+  }
+
+  return { data, error }
+}
+
+export async function enviarResetContrasena({ email, redirectTo }) {
+  const correo = String(email ?? '').trim()
+  if (!correo) return { data: null, error: { message: 'Correo inválido.' } }
+
+  const to = redirectTo || `${window.location.origin}/reset-password`
+  const { data, error } = await supabase.auth.resetPasswordForEmail(correo, { redirectTo: to })
   return { data, error }
 }
 
