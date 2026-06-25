@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { addNotification } from '../../services/notificationService'
 import {
   createObservacionPie,
   createRetiroPie,
@@ -93,47 +94,56 @@ export default function PieAlumnoDetalle({ profile }) {
     setLoading(true)
     setStatus(null)
 
-    const [det, obs, anot, res, asi, ret, inf, notasData, alertasData] = await Promise.all([
-      getAlumnoPieDetail(alumnoId),
-      getObservacionesPie(alumnoId),
-      getAnotacionesAlumno(alumnoId),
-      getResumenPieAlumno(alumnoId),
-      getAsistenciaAlumnoPie(alumnoId),
-      getRetirosPie(alumnoId),
-      getInformesPie(alumnoId),
-      getNotasAlumnoPie(alumnoId),
-      getAlertasAlumnoPie(alumnoId),
-    ])
-
-    if (det.error) return notify('error', det.error.message)
-    if (obs.error) return notify('error', obs.error.message)
-    if (anot.error) return notify('error', anot.error.message)
-
-    // v_pie_resumen puede no existir para el alumno: no debe romper la pantalla
-    if (res?.error && res.error.message) {
-      // Mantengo el comportamiento amigable: si no hay fila, mostramos vacío
-      // (maybeSingle típicamente no llega como "error" sino con data null)
-      // Si por alguna razón llega error real, no rompemos.
-      setResumen(null)
-    } else {
-      setResumen(res?.data ?? null)
+    const handleError = (error, fallbackMessage = 'Ocurrió un error al cargar el detalle PIE.') => {
+      setLoading(false)
+      notify('error', error?.message ?? fallbackMessage)
+      return true
     }
 
-    if (asi?.error) return notify('error', asi.error.message)
-    if (ret.error) return notify('error', ret.error.message)
-    if (inf.error) return notify('error', inf.error.message)
-    if (notasData?.error) return notify('error', notasData.error.message)
-    if (alertasData?.error) return notify('error', alertasData.error.message)
+    try {
+      const [det, obs, anot, res, asi, ret, inf, notasData, alertasData] = await Promise.all([
+        getAlumnoPieDetail(alumnoId),
+        getObservacionesPie(alumnoId),
+        getAnotacionesAlumno(alumnoId),
+        getResumenPieAlumno(alumnoId),
+        getAsistenciaAlumnoPie(alumnoId),
+        getRetirosPie(alumnoId),
+        getInformesPie(alumnoId),
+        getNotasAlumnoPie(alumnoId),
+        getAlertasAlumnoPie(alumnoId),
+      ])
 
-    setAlumno(det.data)
-    setObservaciones(obs.data ?? [])
-    setAnotaciones(anot.data ?? [])
-    setAsistencias(asi.data ?? [])
-    setRetiros(ret.data ?? [])
-    setInformes(inf.data ?? [])
-    setNotas(notasData.data ?? [])
-    setAlertas(alertasData.data ?? null)
-    setLoading(false)
+      if (det.error || !det.data) {
+        return handleError(det.error, 'No se pudo cargar el alumno PIE.')
+      }
+      if (obs.error) return handleError(obs.error)
+      if (anot.error) return handleError(anot.error)
+
+      // v_pie_resumen puede no existir para el alumno: no debe romper la pantalla
+      if (res?.error && res.error.message) {
+        setResumen(null)
+      } else {
+        setResumen(res?.data ?? null)
+      }
+
+      if (asi?.error) return handleError(asi.error)
+      if (ret.error) return handleError(ret.error)
+      if (inf.error) return handleError(inf.error)
+      if (notasData?.error) return handleError(notasData.error)
+      if (alertasData?.error) return handleError(alertasData.error)
+
+      setAlumno(det.data)
+      setObservaciones(obs.data ?? [])
+      setAnotaciones(anot.data ?? [])
+      setAsistencias(asi.data ?? [])
+      setRetiros(ret.data ?? [])
+      setInformes(inf.data ?? [])
+      setNotas(notasData.data ?? [])
+      setAlertas(alertasData.data ?? null)
+      setLoading(false)
+    } catch (error) {
+      handleError(error, 'Ocurrió un error al cargar los datos del alumno PIE.')
+    }
   }
 
 
@@ -153,15 +163,25 @@ export default function PieAlumnoDetalle({ profile }) {
     if (!obsForm.resultado.trim()) return notify('error', 'Escribe el resultado.')
     if (!alumno) return
 
-    const { error } = await createObservacionPie({
+    const { data, error } = await createObservacionPie({
       alumnoId: alumno.id,
       pieId: profile.id,
       tipoIntervencion: obsForm.tipo_intervencion,
       observacion: obsForm.observacion.trim(),
       resultado: obsForm.resultado.trim(),
+      actor: profile,
     })
 
     if (error) return notify('error', error.message)
+
+    addNotification({
+      title: 'Nueva observación PIE',
+      message: `Se ha registrado una observación para ${alumno.nombre}.`,
+      entity: 'pie_observacion',
+      entityId: data?.id ?? null,
+      targetRoles: ['profesor'],
+      metadata: { alumnoId: alumno.id },
+    })
 
     setObsForm({ tipo_intervencion: 'Observación general', observacion: '', resultado: '' })
     await load()
@@ -184,12 +204,13 @@ export default function PieAlumnoDetalle({ profile }) {
 
     const cursoId = alumno.curso_id
 
-    const { error } = await createRetiroPie({
+    const { data, error } = await createRetiroPie({
       alumnoId: alumno.id,
       cursoId,
       pieId: profile.id,
       motivo: retiroForm.motivo.trim(),
       tipo: retiroForm.tipo,
+      actor: profile,
     })
 
     if (error) {
@@ -206,17 +227,34 @@ export default function PieAlumnoDetalle({ profile }) {
 
     setRetiroOpen(false)
     setRetiroForm({ motivo: '', tipo: 'retiro' })
+    addNotification({
+      title: 'Nuevo retiro PIE',
+      message: `Se ha registrado un retiro para ${alumno.nombre}.`,
+      entity: 'pie_retiro',
+      entityId: data?.id ?? null,
+      targetRoles: ['profesor'],
+      metadata: { alumnoId: alumno.id },
+    })
     await load()
     notify('success', 'Retiro registrado.')
   }
 
   const handleRegistrarRetorno = async (retiroId) => {
-    const { error } = await registrarRetornoPie(retiroId)
+    const { data, error } = await registrarRetornoPie(retiroId, profile)
 
     if (error) {
       notify('error', error.message)
       return
     }
+
+    addNotification({
+      title: 'Retorno de retiro PIE',
+      message: `Se registró el retorno del retiro para ${alumno.nombre}.`,
+      entity: 'pie_retiro',
+      entityId: retiroId,
+      targetRoles: ['profesor'],
+      metadata: { alumnoId: alumno.id },
+    })
 
     await load()
     notify('success', 'Retorno registrado correctamente.')
@@ -607,7 +645,7 @@ export default function PieAlumnoDetalle({ profile }) {
                 if (uploadRes.error) return notify('error', uploadRes.error.message)
                 if (!uploadRes.data?.path) return notify('error', 'No se pudo obtener la ruta del archivo.')
 
-                const { error } = await createInformePie({
+                const { data, error } = await createInformePie({
                   alumnoId: alumno.id,
                   pieId: profile.id,
                   titulo: informeForm.titulo.trim(),
@@ -617,6 +655,15 @@ export default function PieAlumnoDetalle({ profile }) {
                 })
 
                 if (error) return notify('error', error.message)
+
+                addNotification({
+                  title: 'Nuevo informe PIE',
+                  message: `Se ha subido un informe para ${alumno.nombre}.`,
+                  entity: 'pie_informe',
+                  entityId: data?.id ?? null,
+                  targetRoles: ['profesor'],
+                  metadata: { alumnoId: alumno.id },
+                })
 
                 setInformeForm({ titulo: '', descripcion: '', archivo: null })
                 await load()

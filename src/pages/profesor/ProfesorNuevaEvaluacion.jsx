@@ -75,6 +75,7 @@ export default function ProfesorNuevaEvaluacion({ profile }) {
       cursoId,
       porcentaje: evalForm.porcentaje,
       fecha: evalForm.fecha,
+      actor: profile,
     })
 
     if (error) return notify('error', 'Error: ' + error.message)
