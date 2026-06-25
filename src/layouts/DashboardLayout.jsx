@@ -7,7 +7,10 @@ const NAV = {
     { to: '/admin', label: '🏠 Inicio' },
     { to: '/admin/profesores', label: '👨‍🏫 Profesores' },
   ],
-  profesor: [{ to: '/profesor', label: '🏠 Inicio' }],
+  profesor: [
+    { to: '/profesor', label: '🏠 Inicio' },
+    { to: '/profesor/nueva-evaluacion', label: '📝 Nueva evaluación' },
+  ],
   alumno: [{ to: '/alumno', label: '🏠 Inicio' }],
   pie: [{ to: '/pie/dashboard', label: '🧩 PIE' }],
 }

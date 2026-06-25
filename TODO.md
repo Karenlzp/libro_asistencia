@@ -1,13 +1,7 @@
-# TODO
-- [x] Agregar función registrarRetornoPie en src/services/pieService.js.
-
-- [ ] Actualizar src/pages/pie/pie_AlumnoDetalle.jsx para:
-  - [x] Importar registrarRetornoPie.
-  - [x] Crear handleRegistrarRetorno.
-  - [x] Mostrar columnas Fecha/Hora Retorno en tabla de retiros.
-  - [x] Mostrar botón Registrar retorno solo si estado === 'activo'.
-  - [x] Si estado === 'retornado', mostrar insignia 'Retornado' (sin botón).
-  - [x] Al registrar retorno: actualizar, refrescar lista y mostrar mensaje success.
-
-- [ ] Verificar que no se rompa el módulo PIE existente (retiros/observaciones).
+- [ ] Entender estructura actual del ProfesorDashboard y dónde se muestran nombres/IDs de alumnos
+- [ ] Actualizar `src/pages/profesor/profesor_Dashboard.jsx`: agregar `useNavigate` y handler `handleGoAlumno(alumnoId)`
+- [ ] Hacer clickeable el nombre en tabla de "Alertas en este curso" usando `a.alumno_id`
+- [ ] Hacer clickeable el nombre en tabla de "Registro de asistencia" usando `a.id`
+- [ ] Aplicar estilos tipo link (cursor pointer, color azul, hover)
+- [ ] Verificar que no se modifique lógica ni queries Supabase
 

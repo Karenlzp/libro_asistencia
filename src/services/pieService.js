@@ -45,22 +45,35 @@ export async function getAlumnoPieDetail(alumnoId) {
 export async function getObservacionesPie(alumnoId) {
   const { data, error } = await supabase
     .from('pie_observaciones')
-    .select('id, observacion, created_at, alumno_id')
+    .select('id, tipo_intervencion, observacion, resultado, created_at, alumno_id')
     .eq('alumno_id', alumnoId)
     .order('created_at', { ascending: false })
 
   return { data, error }
 }
 
-export async function createObservacionPie({ alumnoId, pieId, observacion }) {
+export async function createObservacionPie({
+  alumnoId,
+  pieId,
+  tipoIntervencion,
+  observacion,
+  resultado,
+}) {
   const { data, error } = await supabase
     .from('pie_observaciones')
-    .insert({ alumno_id: alumnoId, pie_id: pieId, observacion })
+    .insert({
+      alumno_id: alumnoId,
+      pie_id: pieId,
+      tipo_intervencion: tipoIntervencion,
+      observacion,
+      resultado,
+    })
     .select()
     .single()
 
   return { data, error }
 }
+
 
 // ── Retiros PIE ───────────────────────────────────────────────────────────
 export async function getRetirosPie(alumnoId) {
@@ -88,6 +101,7 @@ export async function createRetiroPie({ alumnoId, cursoId, pieId, motivo, tipo }
 
 export async function registrarRetornoPie(retiroId) {
   console.log('retiroId', retiroId)
+
 
   if (!retiroId || typeof retiroId !== 'string') {
     return { data: null, error: { message: 'Retiro inválido.' } }
@@ -135,6 +149,62 @@ export async function registrarRetornoPie(retiroId) {
 
   if (error) return { data: null, error }
   return { data, error: null }
+}
+
+// ── Anotaciones PIE ─────────────────────────────────────────────────────
+// (tabla: anotaciones)
+export async function getAnotacionesAlumno(alumnoId) {
+  const { data, error } = await supabase
+    .from('anotaciones')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .order('fecha', { ascending: false })
+
+  return { data, error }
+}
+
+// ── Resumen académico PIE (vista v_pie_resumen) ──────────────────────────
+export async function getResumenPieAlumno(alumnoId) {
+  const { data, error } = await supabase
+    .from('v_pie_resumen')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .maybeSingle()
+
+  return { data, error }
+}
+
+// ── Asistencia PIE (vista v_pie_asistencia) ─────────────────────────────
+export async function getAsistenciaAlumnoPie(alumnoId) {
+  const { data, error } = await supabase
+    .from('v_pie_asistencia')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .order('fecha', { ascending: false })
+
+  return { data, error }
+}
+
+// ── Notas alumno PIE (vista v_pie_notas) ───────────────────────────────
+export async function getNotasAlumnoPie(alumnoId) {
+  const { data, error } = await supabase
+    .from('v_pie_notas')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .order('fecha', { ascending: false })
+
+  return { data, error }
+}
+
+// ── Alertas alumno PIE (vista v_alertas) ───────────────────────────────
+export async function getAlertasAlumnoPie(alumnoId) {
+  const { data, error } = await supabase
+    .from('v_alertas')
+    .select('*')
+    .eq('alumno_id', alumnoId)
+    .maybeSingle()
+
+  return { data, error }
 }
 
 
