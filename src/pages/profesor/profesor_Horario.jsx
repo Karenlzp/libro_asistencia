@@ -1,35 +1,78 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getProfesorCursos } from '../../services/profesorService'
+import { getHorariosProfesor } from '../../services/horarioService'
 
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
-const HORAS = ['08:00', '09:00', '10:00', '11:00', '12:00']
 
-function generarHorario(cursoAsig) {
-  if (!cursoAsig.length) return []
+function toMinutes(timeValue) {
+  if (!timeValue) return null
+  const raw = String(timeValue)
+  const parts = raw.split(':').map((v) => Number(v))
+  const hh = parts[0]
+  const mm = parts[1] ?? 0
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+  return hh * 60 + mm
+}
 
-  const bloques = cursoAsig.map((item) => {
-    const curso = item.cursos
-    const asignatura = item.asignaturas
-    return `${curso.nivel}°${curso.letra} • ${asignatura.nombre}`
-  })
+function formatMinutes(mins) {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
 
-  const horario = []
-  let index = 0
+function normalizeDay(value) {
+  const raw = String(value ?? '').trim().toLowerCase()
+  const map = {
+    lunes: 'Lunes',
+    martes: 'Martes',
+    'miercoles': 'Miércoles',
+    'miércoles': 'Miércoles',
+    jueves: 'Jueves',
+    viernes: 'Viernes',
+  }
+  return map[raw] ?? value
+}
 
-  for (const hora of HORAS) {
-    const fila = { hora, celdas: [] }
-    for (let i = 0; i < DIAS.length; i += 1) {
-      fila.celdas.push(bloques[index % bloques.length])
-      index += 1
-    }
-    horario.push(fila)
+function buildScheduleGrid(bloques = []) {
+  if (!Array.isArray(bloques) || bloques.length === 0) return { horas: [], mapa: new Map() }
+
+  const minutesStartList = bloques.map((b) => toMinutes(b.hora_inicio)).filter((v) => v != null)
+  const minutesEndList = bloques.map((b) => toMinutes(b.hora_fin)).filter((v) => v != null)
+  const minStart = minutesStartList.length ? Math.min(...minutesStartList) : 8 * 60
+  const maxEnd = minutesEndList.length ? Math.max(...minutesEndList) : (minStart + 60)
+
+  const start = Math.floor(minStart / 60) * 60
+  const end = Math.ceil(maxEnd / 60) * 60
+
+  const horas = []
+  for (let t = start; t <= end; t += 60) {
+    horas.push(formatMinutes(t))
   }
 
-  return horario
+  const mapa = new Map()
+  for (const b of bloques) {
+    const dia = normalizeDay(b.dia)
+    const startMin = toMinutes(b.hora_inicio)
+    const slotMin = startMin == null ? null : Math.floor(startMin / 60) * 60
+    const horaKey = slotMin == null ? null : formatMinutes(slotMin)
+    if (!horaKey || !DIAS.includes(dia)) continue
+
+    const key = `${horaKey}__${dia}`
+    const curso = b.cursos ? `${b.cursos.nivel}°${b.cursos.letra}` : '—'
+    const asignatura = b.asignaturas?.nombre ?? '—'
+    const sala = b.sala ?? null
+    const label = `${curso} • ${asignatura}`
+    const timeLabel = b.hora_inicio && b.hora_fin ? `${String(b.hora_inicio).slice(0, 5)} - ${String(b.hora_fin).slice(0, 5)}` : null
+
+    const existing = mapa.get(key) ?? []
+    existing.push({ label, sala, timeLabel })
+    mapa.set(key, existing)
+  }
+
+  return { horas, mapa }
 }
 
 export default function ProfesorHorario({ profile }) {
-  const [cursoAsig, setCursoAsig] = useState([])
+  const [bloques, setBloques] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -38,11 +81,13 @@ export default function ProfesorHorario({ profile }) {
 
     const cargar = async () => {
       setLoading(true)
-      const { data, error } = await getProfesorCursos(profile.id)
+      setError(null)
+      const { data, error } = await getHorariosProfesor({ profesorId: profile.id })
       if (error) {
         setError('No se pudo cargar tu horario. Intenta recargar la página.')
+        setBloques([])
       } else {
-        setCursoAsig(data ?? [])
+        setBloques(data ?? [])
       }
       setLoading(false)
     }
@@ -50,7 +95,7 @@ export default function ProfesorHorario({ profile }) {
     cargar()
   }, [profile?.id])
 
-  const horario = useMemo(() => generarHorario(cursoAsig), [cursoAsig])
+  const grid = useMemo(() => buildScheduleGrid(bloques), [bloques])
 
   if (loading) {
     return (
@@ -74,10 +119,10 @@ export default function ProfesorHorario({ profile }) {
           </div>
         </div>
 
-        {cursoAsig.length === 0 ? (
+        {bloques.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📅</div>
-            <p>No tienes asignaturas asignadas todavía.</p>
+            <p>No tienes bloques asignados todavía.</p>
           </div>
         ) : (
           <div className="schedule-grid">
@@ -86,16 +131,35 @@ export default function ProfesorHorario({ profile }) {
               <div key={dia} className="schedule-cell schedule-header">{dia}</div>
             ))}
 
-            {horario.map((fila) => (
+            {grid.horas.map((hora) => (
               <>
-                <div key={`time-${fila.hora}`} className="schedule-cell schedule-time">
-                  {fila.hora}
+                <div key={`time-${hora}`} className="schedule-cell schedule-time">
+                  {hora}
                 </div>
-                {fila.celdas.map((clase, index) => (
-                  <div key={`${fila.hora}-${index}`} className="schedule-cell schedule-block">
-                    <div className="schedule-subject">{clase}</div>
-                  </div>
-                ))}
+                {DIAS.map((dia) => {
+                  const key = `${hora}__${dia}`
+                  const items = grid.mapa.get(key) ?? []
+                  return (
+                    <div key={`${hora}-${dia}`} className="schedule-cell schedule-block">
+                      {items.length === 0 ? null : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                          {items.map((it, idx) => (
+                            <div key={`${key}-${idx}`} className="schedule-subject">
+                              <div>{it.label}</div>
+                              {(it.timeLabel || it.sala) && (
+                                <div style={{ fontSize: '.75rem', fontWeight: 500, opacity: .8, marginTop: 4 }}>
+                                  {it.timeLabel ? it.timeLabel : null}
+                                  {it.timeLabel && it.sala ? ' · ' : null}
+                                  {it.sala ? it.sala : null}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </>
             ))}
           </div>
