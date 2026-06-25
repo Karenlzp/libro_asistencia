@@ -1,15 +1,16 @@
 // src/pages/admin/admin_Dashboard.jsx
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 
 import {
   getAlertas, getResumen, getUsuarios, getCursos,
   getAsignaturas, getAsignaciones, getHojaVidaAlumno,
-  crearCurso, eliminarCurso, crearAsignatura,
+  crearCurso, actualizarCurso, eliminarCurso, crearAsignatura,
   asignarProfesor, eliminarAsignacion,
   desactivarUsuario, getUsuariosInactivos, reactivarUsuario, modificarNota,
-  crearAnotacionAdmin, cambiarCursoAlumno,
+  crearAnotacionAdmin, cambiarCursoAlumno, actualizarUsuarioPerfil, crearUsuario, enviarResetContrasena,
 } from '../../services/adminService'
+import { createHorario, deleteHorario, getHorarios, updateHorario } from '../../services/horarioService'
 import { downloadAuditExcel, getAuditLogs } from '../../services/auditService'
 import { exportAdminReportsToExcel, getAdminReports, printAdminReport } from '../../services/reportService'
 
@@ -87,17 +88,57 @@ function formatDateTime(value) {
   })
 }
 
-function formatAuditValue(value) {
-  if (!value) return '—'
+function formatAuditValue(value, fieldName) {
+  if (value == null || value === '') return '—'
 
   try {
     const parsed = typeof value === 'string' ? JSON.parse(value) : value
     if (Array.isArray(parsed)) return `${parsed.length} registro(s)`
     if (typeof parsed === 'object') {
       return Object.entries(parsed)
-        .map(([key, item]) => `${key}: ${item ?? '—'}`)
+        .map(([key, item]) => {
+          const keyLower = String(key ?? '').toLowerCase()
+          const labelMap = {
+            activo: 'Estado',
+            nombre: 'Nombre',
+            email: 'Correo',
+            rol: 'Rol',
+            curso_id: 'Curso',
+            nota: 'Nota',
+            estado: 'Estado',
+            fecha: 'Fecha',
+          }
+          const label = labelMap[keyLower] ?? key
+
+          if (keyLower === 'activo') {
+            if (item === true) return `${label}: Habilitado`
+            if (item === false) return `${label}: Deshabilitado`
+          }
+
+          if (keyLower === 'estado') {
+            const raw = String(item ?? '').toLowerCase()
+            const estadoMap = {
+              presente: 'Presente',
+              ausente: 'Ausente',
+              justificado: 'Justificado',
+              retornado: 'Retornado',
+              activo: 'Activo',
+              inactivo: 'Inactivo',
+            }
+            if (estadoMap[raw]) return `${label}: ${estadoMap[raw]}`
+          }
+
+          if (typeof item === 'boolean') return `${label}: ${item ? 'Sí' : 'No'}`
+          if (item == null || item === '') return `${label}: —`
+          return `${label}: ${String(item)}`
+        })
         .join(' · ')
     }
+    if (fieldName && String(fieldName).toLowerCase() === 'activo') {
+      if (parsed === true) return 'Habilitado'
+      if (parsed === false) return 'Deshabilitado'
+    }
+    if (typeof parsed === 'boolean') return parsed ? 'Sí' : 'No'
     return String(parsed)
   } catch {
     return String(value)
@@ -149,11 +190,57 @@ export default function AdminDashboard({ profile }) {
   // Cambio de curso
   const [cursoCambio, setCursoCambio]   = useState('')
 
+  const [usuarioCreateOpen, setUsuarioCreateOpen] = useState(false)
+  const [usuarioEditOpen, setUsuarioEditOpen] = useState(false)
+  const [usuarioCreateForm, setUsuarioCreateForm] = useState({
+    nombre: '',
+    email: '',
+    password: '',
+    rol: 'alumno',
+    cursoId: '',
+  })
+  const [usuarioEditForm, setUsuarioEditForm] = useState({
+    id: '',
+    nombre: '',
+    email: '',
+    rol: 'alumno',
+    cursoId: '',
+  })
+
+  const [cursoEditOpen, setCursoEditOpen] = useState(false)
+  const [cursoEditForm, setCursoEditForm] = useState({ id: '', nivel: '', letra: '' })
+
+  const [horarios, setHorarios] = useState([])
+  const [loadingHorarios, setLoadingHorarios] = useState(false)
+  const [horarioCreateForm, setHorarioCreateForm] = useState({
+    profesorId: '',
+    cursoId: '',
+    asignaturaId: '',
+    dia: 'Lunes',
+    horaInicio: '',
+    horaFin: '',
+    sala: '',
+  })
+  const [horarioEditOpen, setHorarioEditOpen] = useState(false)
+  const [horarioEditForm, setHorarioEditForm] = useState({
+    id: '',
+    profesorId: '',
+    cursoId: '',
+    asignaturaId: '',
+    dia: 'Lunes',
+    horaInicio: '',
+    horaFin: '',
+    sala: '',
+  })
+
+  const horarioEditPanelRef = useRef(null)
+
   useEffect(() => {
     if (!profile?.id) return
     loadData()
     void loadReportes()
     void loadAuditoria()
+    void loadHorarios()
   }, [profile?.id])
 
   const loadData = async () => {
@@ -193,6 +280,29 @@ export default function AdminDashboard({ profile }) {
     setAuditStorage(storage)
     setAuditWarning(warning)
     setLoadingAuditoria(false)
+  }
+
+  const loadHorarios = async () => {
+    setLoadingHorarios(true)
+    const { data, error } = await getHorarios()
+    if (error) {
+      setHorarios([])
+    } else {
+      setHorarios(data ?? [])
+    }
+    setLoadingHorarios(false)
+  }
+
+  const scrollToHorarioEditPanel = () => {
+    const scroll = () => {
+      const el = horarioEditPanelRef.current
+      if (!el) return
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    requestAnimationFrame(() => {
+      scroll()
+      requestAnimationFrame(scroll)
+    })
   }
 
 
@@ -308,6 +418,152 @@ export default function AdminDashboard({ profile }) {
     refreshInsights()
   }
 
+  const handleGuardarUsuarioEdit = async (e) => {
+    e.preventDefault()
+    if (!usuarioEditForm.id) return
+    if (!usuarioEditForm.nombre.trim()) return notify('error', 'Ingresa un nombre.')
+    if (!usuarioEditForm.email.trim()) return notify('error', 'Ingresa un correo.')
+
+    const { error } = await actualizarUsuarioPerfil({
+      id: usuarioEditForm.id,
+      nombre: usuarioEditForm.nombre,
+      email: usuarioEditForm.email,
+      rol: usuarioEditForm.rol,
+      cursoId: usuarioEditForm.rol === 'alumno' ? usuarioEditForm.cursoId : null,
+      actor: profile,
+    })
+    if (error) return notify('error', error.message)
+    notify('success', 'Usuario actualizado.')
+    setUsuarioEditOpen(false)
+    setUsuarioEditForm({ id: '', nombre: '', email: '', rol: 'alumno', cursoId: '' })
+    await loadData()
+    refreshInsights()
+  }
+
+  const handleEnviarReset = async (u) => {
+    if (!u?.email) return notify('error', 'Este usuario no tiene correo registrado.')
+    if (!confirm(`¿Enviar enlace de restablecimiento de contraseña a ${u.email}?`)) return
+    const { error } = await enviarResetContrasena({ email: u.email, redirectTo: `${window.location.origin}/reset-password` })
+    if (error) return notify('error', error.message)
+    notify('success', 'Enlace enviado al correo.')
+  }
+
+  const handleCrearUsuario = async (e) => {
+    e.preventDefault()
+    const { nombre, email, password, rol, cursoId } = usuarioCreateForm
+    if (!nombre.trim()) return notify('error', 'Ingresa un nombre.')
+    if (!email.trim()) return notify('error', 'Ingresa un correo.')
+    if (!password || password.length < 6) return notify('error', 'La contraseña debe tener al menos 6 caracteres.')
+    if (!rol) return notify('error', 'Selecciona un rol.')
+    if (rol === 'alumno' && !cursoId) return notify('error', 'Selecciona un curso para el alumno.')
+
+    const { error } = await crearUsuario({
+      nombre,
+      email,
+      password,
+      rol,
+      cursoId: rol === 'alumno' ? cursoId : null,
+      actor: profile,
+    })
+
+    if (error) return notify('error', error.message)
+    notify('success', 'Usuario creado.')
+    setUsuarioCreateOpen(false)
+    setUsuarioCreateForm({ nombre: '', email: '', password: '', rol: 'alumno', cursoId: '' })
+    await loadData()
+    refreshInsights()
+  }
+
+  const handleGuardarCursoEdit = async (e) => {
+    e.preventDefault()
+    if (!cursoEditForm.id) return
+    if (!cursoEditForm.nivel || !cursoEditForm.letra) return notify('error', 'Completa nivel y letra.')
+    if (!/^[A-Za-z]+$/.test(cursoEditForm.letra)) return notify('error', 'La letra solo puede contener letras (A, B, C...).')
+
+    const { error } = await actualizarCurso({
+      id: cursoEditForm.id,
+      nivel: cursoEditForm.nivel,
+      letra: cursoEditForm.letra,
+      actor: profile,
+    })
+
+    if (error) return notify('error', error.message)
+    notify('success', 'Curso actualizado.')
+    setCursoEditOpen(false)
+    setCursoEditForm({ id: '', nivel: '', letra: '' })
+    const { data } = await getCursos()
+    setCursos(data ?? [])
+    const res = await getResumen()
+    setResumen(res)
+    refreshInsights()
+  }
+
+  const handleCrearHorario = async (e) => {
+    e.preventDefault()
+    const f = horarioCreateForm
+    if (!f.profesorId || !f.cursoId || !f.asignaturaId) return notify('error', 'Completa profesor, curso y asignatura.')
+    if (!f.horaInicio || !f.horaFin) return notify('error', 'Completa hora de inicio y fin.')
+
+    const { error } = await createHorario({
+      profesorId: f.profesorId,
+      cursoId: f.cursoId,
+      asignaturaId: f.asignaturaId,
+      dia: f.dia,
+      horaInicio: f.horaInicio,
+      horaFin: f.horaFin,
+      sala: f.sala,
+      actor: profile,
+    })
+    if (error) return notify('error', error.message)
+    notify('success', 'Horario creado.')
+    setHorarioCreateForm({
+      profesorId: '',
+      cursoId: '',
+      asignaturaId: '',
+      dia: 'Lunes',
+      horaInicio: '',
+      horaFin: '',
+      sala: '',
+    })
+    await loadHorarios()
+    refreshInsights()
+  }
+
+  const handleGuardarHorarioEdit = async (e) => {
+    e.preventDefault()
+    const f = horarioEditForm
+    if (!f.id) return
+    if (!f.profesorId || !f.cursoId || !f.asignaturaId) return notify('error', 'Completa profesor, curso y asignatura.')
+    if (!f.horaInicio || !f.horaFin) return notify('error', 'Completa hora de inicio y fin.')
+
+    const { error } = await updateHorario({
+      id: f.id,
+      profesorId: f.profesorId,
+      cursoId: f.cursoId,
+      asignaturaId: f.asignaturaId,
+      dia: f.dia,
+      horaInicio: f.horaInicio,
+      horaFin: f.horaFin,
+      sala: f.sala,
+      actor: profile,
+    })
+    if (error) return notify('error', error.message)
+    notify('success', 'Horario actualizado.')
+    setHorarioEditOpen(false)
+    setHorarioEditForm({
+      id: '',
+      profesorId: '',
+      cursoId: '',
+      asignaturaId: '',
+      dia: 'Lunes',
+      horaInicio: '',
+      horaFin: '',
+      sala: '',
+    })
+    await loadHorarios()
+    refreshInsights()
+  }
+
   // ── Modificar nota ────────────────────────────────────────────────────────
   const handleModificarNota = async (detalleNotaId, valorActual) => {
     const nuevaNota = notaEditando?.id === detalleNotaId ? notaEditando.valor : valorActual
@@ -406,11 +662,12 @@ export default function AdminDashboard({ profile }) {
         {[
           { key: 'alertas',  label: `Alertas (${alertas.length})` },
           { key: 'reportes', label: 'Reportes' },
-          { key: 'auditoria', label: `Auditoría (${auditoria.length})` },
+          { key: 'auditoria', label: `Historial (${auditoria.length})` },
           { key: 'usuarios', label: 'Usuarios' },
           { key: 'usuarios_inactivos', label: 'Usuarios deshabilitados' },
 
           { key: 'cursos',   label: 'Cursos y asignaturas' },
+          { key: 'horarios', label: 'Horarios' },
           { key: 'asignar',  label: 'Asignar profesor' },
           { key: 'hoja',     label: 'Hoja de vida' },
         ].map(({ key, label }) => (
@@ -596,14 +853,14 @@ export default function AdminDashboard({ profile }) {
         </div>
       )}
 
-      {/* ── Tab: Auditoría ── */}
+      {/* ── Tab: Historial ── */}
       {tab === 'auditoria' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div className="card">
             <div className="card-header">
               <div>
-                <div className="card-title">Auditoría del sistema</div>
-                <div className="card-subtitle">Registra acciones ejecutadas desde los módulos de admin, profesor y PIE.</div>
+                <div className="card-title">Historial del sistema</div>
+                <div className="card-subtitle">Registro de acciones ejecutadas desde los módulos de admin, profesor y PIE.</div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button className="button ghost" onClick={loadAuditoria}>Actualizar</button>
@@ -651,11 +908,11 @@ export default function AdminDashboard({ profile }) {
             </div>
 
             {loadingAuditoria && !auditoria.length ? (
-              <div className="loading-wrap"><div className="spinner" /> Cargando auditoría...</div>
+              <div className="loading-wrap"><div className="spinner" /> Cargando historial...</div>
             ) : auditoriaFiltrada.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-icon">🧾</div>
-                <p>No hay eventos de auditoría con los filtros actuales.</p>
+                <p>No hay eventos en el historial con los filtros actuales.</p>
               </div>
             ) : (
               <div className="table-wrap">
@@ -672,8 +929,8 @@ export default function AdminDashboard({ profile }) {
                         <td>{log.action ?? '—'}</td>
                         <td>{log.entity ?? '—'}</td>
                         <td>{log.field_name ?? '—'}</td>
-                        <td>{formatAuditValue(log.old_value)}</td>
-                        <td>{formatAuditValue(log.new_value)}</td>
+                        <td>{formatAuditValue(log.old_value, log.field_name)}</td>
+                        <td>{formatAuditValue(log.new_value, log.field_name)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -688,18 +945,182 @@ export default function AdminDashboard({ profile }) {
       {tab === 'usuarios' && (
         <div className="card">
           <div className="card-header">
-            <div className="card-title">Usuarios del sistema</div>
-            <div className="card-subtitle">{usuarios.length} usuarios activos</div>
+            <div>
+              <div className="card-title">Usuarios del sistema</div>
+              <div className="card-subtitle">{usuarios.length} usuarios activos</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="button primary" onClick={() => { setUsuarioCreateOpen(true); setUsuarioEditOpen(false) }}>
+                Crear usuario
+              </button>
+            </div>
           </div>
+
+          {usuarioCreateOpen && (
+            <div className="card" style={{ borderLeft: '3px solid var(--blue)', marginBottom: 16 }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title">Crear usuario</div>
+                  <div className="card-subtitle">Crea el usuario en Auth y su perfil en la tabla usuarios.</div>
+                </div>
+                <button className="button ghost" onClick={() => setUsuarioCreateOpen(false)}>✕ Cerrar</button>
+              </div>
+
+              <form className="form-grid" onSubmit={handleCrearUsuario}>
+                <div className="form-group">
+                  <label className="form-label">Nombre</label>
+                  <input
+                    className="form-input"
+                    value={usuarioCreateForm.nombre}
+                    onChange={(e) => setUsuarioCreateForm((p) => ({ ...p, nombre: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Correo</label>
+                  <input
+                    className="form-input"
+                    type="email"
+                    value={usuarioCreateForm.email}
+                    onChange={(e) => setUsuarioCreateForm((p) => ({ ...p, email: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Contraseña</label>
+                  <input
+                    className="form-input"
+                    type="password"
+                    value={usuarioCreateForm.password}
+                    onChange={(e) => setUsuarioCreateForm((p) => ({ ...p, password: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Rol</label>
+                  <select
+                    className="form-select"
+                    value={usuarioCreateForm.rol}
+                    onChange={(e) => setUsuarioCreateForm((p) => ({ ...p, rol: e.target.value }))}
+                  >
+                    <option value="alumno">alumno</option>
+                    <option value="profesor">profesor</option>
+                    <option value="pie">pie</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </div>
+
+                {usuarioCreateForm.rol === 'alumno' && (
+                  <div className="form-group">
+                    <label className="form-label">Curso</label>
+                    <select
+                      className="form-select"
+                      value={usuarioCreateForm.cursoId}
+                      onChange={(e) => setUsuarioCreateForm((p) => ({ ...p, cursoId: e.target.value }))}
+                      required
+                    >
+                      <option value="">Elegir curso</option>
+                      {cursos.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nivel}°{c.letra}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="form-actions">
+                  <button className="button primary" type="submit">Crear</button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {usuarioEditOpen && (
+            <div className="card" style={{ borderLeft: '3px solid var(--green)', marginBottom: 16 }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title">Editar usuario</div>
+                  <div className="card-subtitle">Edita nombre, correo, rol y curso (si corresponde).</div>
+                </div>
+                <button className="button ghost" onClick={() => setUsuarioEditOpen(false)}>✕ Cerrar</button>
+              </div>
+
+              <form className="form-grid" onSubmit={handleGuardarUsuarioEdit}>
+                <div className="form-group">
+                  <label className="form-label">Nombre</label>
+                  <input
+                    className="form-input"
+                    value={usuarioEditForm.nombre}
+                    onChange={(e) => setUsuarioEditForm((p) => ({ ...p, nombre: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Correo</label>
+                  <input
+                    className="form-input"
+                    type="email"
+                    value={usuarioEditForm.email}
+                    onChange={(e) => setUsuarioEditForm((p) => ({ ...p, email: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Rol</label>
+                  <select
+                    className="form-select"
+                    value={usuarioEditForm.rol}
+                    onChange={(e) => setUsuarioEditForm((p) => ({ ...p, rol: e.target.value }))}
+                    required
+                  >
+                    <option value="alumno">alumno</option>
+                    <option value="profesor">profesor</option>
+                    <option value="pie">pie</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </div>
+
+                {usuarioEditForm.rol === 'alumno' && (
+                  <div className="form-group">
+                    <label className="form-label">Curso</label>
+                    <select
+                      className="form-select"
+                      value={usuarioEditForm.cursoId}
+                      onChange={(e) => setUsuarioEditForm((p) => ({ ...p, cursoId: e.target.value }))}
+                      required
+                    >
+                      <option value="">Elegir curso</option>
+                      {cursos.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nivel}°{c.letra}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="form-actions">
+                  <button className="button primary" type="submit">Guardar</button>
+                </div>
+              </form>
+            </div>
+          )}
+
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Nombre</th><th>Rol</th><th>Curso</th><th>Registrado</th><th></th><th></th></tr>
+                <tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Curso</th><th>Registrado</th><th></th><th></th><th></th><th></th></tr>
               </thead>
                   <tbody>
                 {usuarios.map(u => (
                   <tr key={u.id}>
                     <td><strong>{u.nombre}</strong></td>
+                    <td style={{ color: 'var(--gray-700)', fontSize: '.82rem' }}>
+                      {u.email ?? <span style={{ color: 'var(--gray-300)' }}>—</span>}
+                    </td>
                     <td><span className="badge default">{u.rol}</span></td>
                     <td>{u.cursos ? `${u.cursos.nivel}°${u.cursos.letra}` : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                     <td style={{ color: 'var(--gray-500)', fontSize: '.78rem' }}>
@@ -712,6 +1133,34 @@ export default function AdminDashboard({ profile }) {
                           Ver hoja
                         </button>
                       )}
+                    </td>
+                    <td>
+                      <button
+                        className="button ghost"
+                        style={{ fontSize: '.75rem', padding: '4px 10px' }}
+                        onClick={() => {
+                          setUsuarioEditOpen(true)
+                          setUsuarioCreateOpen(false)
+                          setUsuarioEditForm({
+                            id: u.id,
+                            nombre: u.nombre ?? '',
+                            email: u.email ?? '',
+                            rol: u.rol ?? 'alumno',
+                            cursoId: u.curso_id ?? '',
+                          })
+                        }}
+                      >
+                        Editar
+                      </button>
+                    </td>
+                    <td>
+                      <button
+                        className="button ghost"
+                        style={{ fontSize: '.75rem', padding: '4px 10px' }}
+                        onClick={() => handleEnviarReset(u)}
+                      >
+                        Reset
+                      </button>
                     </td>
                     <td>
                         <button
@@ -739,12 +1188,15 @@ export default function AdminDashboard({ profile }) {
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Nombre</th><th>Rol</th><th>Curso</th><th>Registrado</th><th></th><th></th></tr>
+                <tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Curso</th><th>Registrado</th><th></th><th></th></tr>
               </thead>
               <tbody>
                 {usuariosInactivos.map(u => (
                   <tr key={u.id}>
                     <td><strong>{u.nombre}</strong></td>
+                    <td style={{ color: 'var(--gray-700)', fontSize: '.82rem' }}>
+                      {u.email ?? <span style={{ color: 'var(--gray-300)' }}>—</span>}
+                    </td>
                     <td><span className="badge default">{u.rol}</span></td>
                     <td>{u.cursos ? `${u.cursos.nivel}°${u.cursos.letra}` : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                     <td style={{ color: 'var(--gray-500)', fontSize: '.78rem' }}>
@@ -808,6 +1260,50 @@ export default function AdminDashboard({ profile }) {
               </div>
             </form>
 
+            {cursoEditOpen && (
+              <div className="card" style={{ borderLeft: '3px solid var(--green)', marginTop: 16, boxShadow: 'none' }}>
+                <div className="card-header">
+                  <div>
+                    <div className="card-title">Editar curso</div>
+                    <div className="card-subtitle">Actualiza nivel y letra del curso seleccionado.</div>
+                  </div>
+                  <button className="button ghost" onClick={() => { setCursoEditOpen(false); setCursoEditForm({ id: '', nivel: '', letra: '' }) }}>
+                    ✕ Cerrar
+                  </button>
+                </div>
+                <form className="form-grid" onSubmit={handleGuardarCursoEdit}>
+                  <div className="form-group">
+                    <label className="form-label">Nivel</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min="1"
+                      max="12"
+                      value={cursoEditForm.nivel}
+                      onChange={(e) => setCursoEditForm((p) => ({ ...p, nivel: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Letra</label>
+                    <input
+                      className="form-input"
+                      maxLength={2}
+                      value={cursoEditForm.letra}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^A-Za-z]/g, '')
+                        setCursoEditForm((p) => ({ ...p, letra: val }))
+                      }}
+                      required
+                    />
+                  </div>
+                  <div className="form-actions">
+                    <button className="button primary" type="submit">Guardar</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
             {/* Lista cursos con botón eliminar */}
             <div style={{ marginTop: 16 }}>
               <div className="section-title">Cursos existentes</div>
@@ -817,6 +1313,16 @@ export default function AdminDashboard({ profile }) {
                     <span style={{ fontSize: '.83rem', fontWeight: 600, color: 'var(--blue-mid)' }}>
                       {c.nivel}°{c.letra}
                     </span>
+                    <button
+                      onClick={() => {
+                        setCursoEditOpen(true)
+                        setCursoEditForm({ id: c.id, nivel: c.nivel, letra: c.letra })
+                      }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-700)', fontSize: '.75rem', padding: '0 2px', lineHeight: 1 }}
+                      title="Editar curso"
+                    >
+                      ✎
+                    </button>
                     <button
                       onClick={() => handleEliminarCurso(c)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: '.75rem', padding: '0 2px', lineHeight: 1 }}
@@ -852,6 +1358,331 @@ export default function AdminDashboard({ profile }) {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'horarios' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Horarios</div>
+                <div className="card-subtitle">Asigna bloques por curso, asignatura y profesor.</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="button ghost" onClick={loadHorarios} disabled={loadingHorarios}>Actualizar</button>
+              </div>
+            </div>
+
+            {horarioEditOpen && (
+              <div
+                ref={horarioEditPanelRef}
+                className="card"
+                style={{
+                  borderLeft: '4px solid var(--green)',
+                  border: '1px solid rgba(16, 185, 129, .22)',
+                  background: 'linear-gradient(180deg, rgba(16, 185, 129, .07) 0%, rgba(255, 255, 255, 1) 65%)',
+                  marginBottom: 16,
+                  boxShadow: '0 18px 46px rgba(15, 23, 42, .08)',
+                }}
+              >
+                <div className="card-header">
+                  <div>
+                    <div className="card-title">Editar bloque</div>
+                    <div className="card-subtitle">Actualiza los datos del bloque seleccionado.</div>
+                  </div>
+                  <button
+                    className="button ghost"
+                    onClick={() => {
+                      setHorarioEditOpen(false)
+                      setHorarioEditForm({
+                        id: '',
+                        profesorId: '',
+                        cursoId: '',
+                        asignaturaId: '',
+                        dia: 'Lunes',
+                        horaInicio: '',
+                        horaFin: '',
+                        sala: '',
+                      })
+                    }}
+                  >
+                    ✕ Cerrar
+                  </button>
+                </div>
+
+                <form className="form-grid" onSubmit={handleGuardarHorarioEdit}>
+                  <div className="form-group">
+                    <label className="form-label">Profesor</label>
+                    <select
+                      className="form-select"
+                      value={horarioEditForm.profesorId}
+                      onChange={(e) => setHorarioEditForm((p) => ({ ...p, profesorId: e.target.value }))}
+                      required
+                    >
+                      <option value="">Elegir profesor</option>
+                      {profesores.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Curso</label>
+                    <select
+                      className="form-select"
+                      value={horarioEditForm.cursoId}
+                      onChange={(e) => setHorarioEditForm((p) => ({ ...p, cursoId: e.target.value }))}
+                      required
+                    >
+                      <option value="">Elegir curso</option>
+                      {cursos.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nivel}°{c.letra}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Asignatura</label>
+                    <select
+                      className="form-select"
+                      value={horarioEditForm.asignaturaId}
+                      onChange={(e) => setHorarioEditForm((p) => ({ ...p, asignaturaId: e.target.value }))}
+                      required
+                    >
+                      <option value="">Elegir asignatura</option>
+                      {asignaturas.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Día</label>
+                    <select
+                      className="form-select"
+                      value={horarioEditForm.dia}
+                      onChange={(e) => setHorarioEditForm((p) => ({ ...p, dia: e.target.value }))}
+                    >
+                      {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'].map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Hora inicio</label>
+                    <input
+                      className="form-input"
+                      type="time"
+                      value={horarioEditForm.horaInicio}
+                      onChange={(e) => setHorarioEditForm((p) => ({ ...p, horaInicio: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Hora fin</label>
+                    <input
+                      className="form-input"
+                      type="time"
+                      value={horarioEditForm.horaFin}
+                      onChange={(e) => setHorarioEditForm((p) => ({ ...p, horaFin: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Sala</label>
+                    <input
+                      className="form-input"
+                      value={horarioEditForm.sala}
+                      onChange={(e) => setHorarioEditForm((p) => ({ ...p, sala: e.target.value }))}
+                      placeholder="Opcional"
+                    />
+                  </div>
+                  <div className="form-actions">
+                    <button className="button primary" type="submit">Guardar</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div className="card" style={{ borderLeft: '3px solid var(--blue)', marginBottom: 16, boxShadow: 'none' }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title">Crear bloque</div>
+                  <div className="card-subtitle">Crea un bloque para el horario institucional.</div>
+                </div>
+              </div>
+
+              <form className="form-grid" onSubmit={handleCrearHorario}>
+                <div className="form-group">
+                  <label className="form-label">Profesor</label>
+                  <select
+                    className="form-select"
+                    value={horarioCreateForm.profesorId}
+                    onChange={(e) => setHorarioCreateForm((p) => ({ ...p, profesorId: e.target.value }))}
+                    required
+                  >
+                    <option value="">Elegir profesor</option>
+                    {profesores.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Curso</label>
+                  <select
+                    className="form-select"
+                    value={horarioCreateForm.cursoId}
+                    onChange={(e) => setHorarioCreateForm((p) => ({ ...p, cursoId: e.target.value }))}
+                    required
+                  >
+                    <option value="">Elegir curso</option>
+                    {cursos.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nivel}°{c.letra}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Asignatura</label>
+                  <select
+                    className="form-select"
+                    value={horarioCreateForm.asignaturaId}
+                    onChange={(e) => setHorarioCreateForm((p) => ({ ...p, asignaturaId: e.target.value }))}
+                    required
+                  >
+                    <option value="">Elegir asignatura</option>
+                    {asignaturas.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Día</label>
+                  <select
+                    className="form-select"
+                    value={horarioCreateForm.dia}
+                    onChange={(e) => setHorarioCreateForm((p) => ({ ...p, dia: e.target.value }))}
+                  >
+                    {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'].map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Hora inicio</label>
+                  <input
+                    className="form-input"
+                    type="time"
+                    value={horarioCreateForm.horaInicio}
+                    onChange={(e) => setHorarioCreateForm((p) => ({ ...p, horaInicio: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Hora fin</label>
+                  <input
+                    className="form-input"
+                    type="time"
+                    value={horarioCreateForm.horaFin}
+                    onChange={(e) => setHorarioCreateForm((p) => ({ ...p, horaFin: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Sala</label>
+                  <input
+                    className="form-input"
+                    value={horarioCreateForm.sala}
+                    onChange={(e) => setHorarioCreateForm((p) => ({ ...p, sala: e.target.value }))}
+                    placeholder="Opcional"
+                  />
+                </div>
+                <div className="form-actions">
+                  <button className="button primary" type="submit">Crear</button>
+                </div>
+              </form>
+            </div>
+
+            {loadingHorarios ? (
+              <div className="loading-wrap"><div className="spinner" /> Cargando horarios...</div>
+            ) : horarios.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">📅</div>
+                <p>No hay bloques registrados.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Día</th><th>Horario</th><th>Curso</th><th>Asignatura</th><th>Profesor</th><th>Sala</th><th></th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {horarios.map((h) => (
+                      <tr key={h.id}>
+                        <td>{h.dia ?? '—'}</td>
+                        <td>{h.hora_inicio ?? '—'} - {h.hora_fin ?? '—'}</td>
+                        <td>{h.cursos ? `${h.cursos.nivel}°${h.cursos.letra}` : '—'}</td>
+                        <td>{h.asignaturas?.nombre ?? '—'}</td>
+                        <td>{h.usuarios?.nombre ?? '—'}</td>
+                        <td>{h.sala ?? '—'}</td>
+                        <td>
+                          <button
+                            className="button ghost"
+                            style={{ fontSize: '.75rem', padding: '4px 10px' }}
+                            onClick={() => {
+                              setHorarioEditOpen(true)
+                              setHorarioEditForm({
+                                id: h.id,
+                                profesorId: h.profesor_id ?? '',
+                                cursoId: h.curso_id ?? '',
+                                asignaturaId: h.asignatura_id ?? '',
+                                dia: h.dia ?? 'Lunes',
+                                horaInicio: h.hora_inicio ?? '',
+                                horaFin: h.hora_fin ?? '',
+                                sala: h.sala ?? '',
+                              })
+                              scrollToHorarioEditPanel()
+                            }}
+                          >
+                            Editar
+                          </button>
+                        </td>
+                        <td>
+                          <button
+                            className="button ghost"
+                            style={{ fontSize: '.75rem', padding: '4px 10px', color: 'var(--danger)', borderColor: 'var(--danger-border)' }}
+                            onClick={async () => {
+                              if (!confirm('¿Eliminar este bloque?')) return
+                              const { error } = await deleteHorario({ id: h.id, actor: profile })
+                              if (error) return notify('error', error.message)
+                              notify('success', 'Bloque eliminado.')
+                              await loadHorarios()
+                              refreshInsights()
+                            }}
+                          >
+                            Eliminar
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
