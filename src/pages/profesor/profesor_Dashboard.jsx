@@ -1,5 +1,7 @@
 // src/pages/profesor/profesor_Dashboard.jsx
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+
 
 import {
   getProfesorCursos,
@@ -278,10 +280,18 @@ export default function ProfesorDashboard({ profile }) {
     setLoadingNotas(false)
   }
 
+  const navigate = useNavigate()
+
+  const handleGoAlumno = alumnoId => {
+    if (!alumnoId) return
+    navigate(`/profesor/alumno/${alumnoId}`)
+  }
+
   const notify = (type, msg) => {
     setStatus({ type, msg })
     setTimeout(() => setStatus(null), 4000)
   }
+
 
   const handleGuardarNotas = async () => {
     const pendientes = notasEval
@@ -480,7 +490,13 @@ export default function ProfesorDashboard({ profile }) {
                   alertasFiltradas.map(a => (
                     <tr key={a.alumno_id}>
                       <td>
-                        <strong>{a.alumno}</strong>
+                        <strong
+                          onClick={() => handleGoAlumno(a.alumno_id)}
+                          style={{ cursor: 'pointer', color: 'var(--blue)', userSelect: 'none' }}
+                          title="Ver ficha"
+                        >
+                          {a.alumno}
+                        </strong>
                       </td>
                       <td>
                         {a.promedio_general != null ? (
@@ -695,8 +711,15 @@ export default function ProfesorDashboard({ profile }) {
                       return (
                         <tr key={a.id} style={{ background: hayCambio ? 'rgba(43,108,176,.04)' : undefined }}>
                           <td>
-                            <strong>{a.nombre}</strong>
+                            <strong
+                              onClick={() => handleGoAlumno(a.id)}
+                              style={{ cursor: 'pointer', color: 'var(--blue)', userSelect: 'none' }}
+                              title="Ver ficha"
+                            >
+                              {a.nombre}
+                            </strong>
                             {hayCambio && (
+
                               <span style={{ marginLeft: 8, fontSize: '.7rem', color: 'var(--blue)', fontWeight: 600 }}>modificado</span>
                             )}
                           </td>

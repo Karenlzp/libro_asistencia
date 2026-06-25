@@ -16,11 +16,14 @@ import ProfesorDashboard from './pages/profesor/profesor_Dashboard'
 import ProfesorNuevaEvaluacion from './pages/profesor/ProfesorNuevaEvaluacion'
 import AlumnoDashboard   from './pages/alumno/alumno_Dashboard'
 
+import ProfesorAlumnoFichaIntegral from './pages/profesor/ProfesorAlumnoFichaIntegral'
+
 import PieDashboard      from './pages/pie/pie_Dashboard'
 import PieAlumnoDetalle from './pages/pie/pie_AlumnoDetalle'
 
 // Guards
 import ProtectedRoute from './components/ProtectedRoute'
+
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = cargando
@@ -133,6 +136,16 @@ export default function App() {
           }
         />
 
+        <Route
+          path="/profesor/alumno/:id"
+          element={
+            <ProtectedRoute session={session} profile={profile} requiredRole="profesor">
+              <DashboardLayout profile={profile}>
+                <ProfesorAlumnoFichaIntegral profile={profile} />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
 
         {/* ── Rutas protegidas Alumno ── */}
         <Route
@@ -145,6 +158,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
 
         {/* ── Rutas protegidas PIE ── */}
         <Route

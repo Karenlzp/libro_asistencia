@@ -1,19 +1,22 @@
-    // src/services/profesorService.js
-    import { supabase } from '../supabaseClient'
+import { supabase } from '../supabaseClient'
 
-    // ── Cursos y asignaturas del profesor ─────────────────────────────────────────
-    export async function getProfesorCursos(profesorId) {
-    const { data, error } = await supabase
-        .from('profesor_asignatura')
-        .select(`
-        id,
-        cursos   ( id, nivel, letra ),
-        asignaturas ( id, nombre )
-        `)
-        .eq('profesor_id', profesorId)
-        .order('created_at')
-    return { data, error }
-    }
+// src/services/profesorService.js
+// Mantiene la API de exports existente.
+// Corrección: getProfesorAlumnoFichaResumen debe retornar SIEMPRE una forma consistente.
+
+export async function getProfesorCursos(profesorId) {
+  const { data, error } = await supabase
+    .from('profesor_asignatura')
+    .select(`
+      id,
+      cursos ( id, nivel, letra ),
+      asignaturas ( id, nombre )
+    `)
+    .eq('profesor_id', profesorId)
+    .order('created_at')
+
+  return { data, error }
+}
 
     // ── Alumnos de un curso ───────────────────────────────────────────────────────
     export async function getAlumnosPorCurso(cursoId) {
@@ -40,6 +43,142 @@
     return { data, error }
     }
 
+    // ── Notas del alumno (con relaciones) ─────────────────────────────────────
+// --- Mapeos de compatibilidad (para que los imports existentes funcionen) ---
+// El componente ProfesorAlumnoFichaIntegral.jsx espera estos exports con nombres específicos.
+// Se reutiliza la lógica ya existente (sin cambiar el comportamiento), creando wrappers.
+
+export async function getProfesorAlumnoFichaResumen({ alumnoId }) {
+  console.log('RAW alumnoId:', alumnoId)
+
+  try {
+    let filtroId = alumnoId
+
+    const str = typeof alumnoId === 'string' ? alumnoId.trim() : null
+    const looksNumeric = str && /^[0-9]+$/.test(str)
+
+    if (looksNumeric) {
+      filtroId = Number(str)
+    }
+
+    console.log('filtroId final:', filtroId)
+
+    const { data: alumnoData, error: alumnoError } = await supabase
+      .from('usuarios')
+      .select('id, nombre, cursos (nivel, letra)')
+      .eq('id', filtroId)
+      .maybeSingle()
+
+    console.log('ALUMNO RAW:', alumnoData)
+
+    const { data: anotData } = await supabase
+      .from('v_alertas')
+      .select('*')
+      .eq('alumno_id', filtroId)
+
+    return {
+      data: {
+        alumno: alumnoData ?? null,
+        resumen: {
+          promedio_general: null,
+          porcentaje_asistencia: null,
+          anotaciones_positivas: 0,
+          anotaciones_negativas: 0,
+          cantidad_alertas: anotData?.length ?? 0,
+        },
+      },
+      error: alumnoError ?? null,
+    }
+
+  } catch (err) {
+    console.error('ERROR ficha resumen:', err)
+
+    return {
+      data: {
+        alumno: null,
+        resumen: {
+          promedio_general: null,
+          porcentaje_asistencia: null,
+          anotaciones_positivas: 0,
+          anotaciones_negativas: 0,
+          cantidad_alertas: 0,
+        },
+      },
+      error: err,
+    }
+  }
+}
+
+
+export async function getProfesorAlumnoAsistenciaHistorial({ alumnoId }) {
+    const { data, error } = await supabase
+        .from('asistencia')
+        .select('id, fecha, estado')
+        .eq('alumno_id', alumnoId)
+        .order('fecha', { ascending: false })
+
+    return { data, error }
+}
+
+export async function getProfesorAlumnoConducta({ alumnoId }) {
+    const { data, error } = await supabase
+        .from('anotaciones')
+        .select('id, tipo, descripcion, fecha, alumno_id')
+        .eq('alumno_id', alumnoId)
+        .order('fecha', { ascending: false })
+
+    return { data, error }
+}
+
+export async function getProfesorAlumnoPieObservaciones({ alumnoId }) {
+    const { data, error } = await supabase
+        .from('pie_observaciones')
+        .select('id, observacion, created_at, fecha')
+        .eq('alumno_id', alumnoId)
+        .order('created_at', { ascending: false })
+
+    return { data, error }
+}
+
+export async function getProfesorAlumnoPieRetiros({ alumnoId }) {
+    const { data, error } = await supabase
+        .from('pie_retiros')
+        .select('id, alumno_id, motivo, tipo, estado, created_at, fecha_retorno, hora_retorno, fecha')
+        .eq('alumno_id', alumnoId)
+        .order('created_at', { ascending: false })
+
+    return { data, error }
+}
+
+export async function getProfesorAlumnoPieInformes({ alumnoId }) {
+    const { data, error } = await supabase
+        .from('pie_informes')
+        .select('*')
+        .eq('alumno_id', alumnoId)
+        .order('created_at', { ascending: false })
+
+    return { data, error }
+}
+
+export async function getProfesorAlumnoNotas({ alumnoId }) {
+  const { data, error } = await supabase
+    .from('detalle_nota')
+    .select(`
+        id,
+        nota,
+        created_at,
+        evaluaciones (
+            nombre,
+            fecha,
+            asignaturas ( nombre )
+        )
+        `)
+    .eq('alumno_id', alumnoId)
+    .order('created_at', { ascending: false })
+
+  return { data, error }
+}
+
     // ── Notas de una evaluación ───────────────────────────────────────────────────
     export async function getNotasPorEvaluacion(evaluacionId) {
     const { data, error } = await supabase
@@ -51,6 +190,7 @@
         .eq('evaluacion_id', evaluacionId)
     return { data, error }
     }
+
 
     // ── Asistencia de un curso en una fecha ───────────────────────────────────────
     export async function getAsistenciaCursoFecha(cursoId, fecha) {

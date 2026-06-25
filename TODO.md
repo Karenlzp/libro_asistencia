@@ -1,8 +1,7 @@
-- [x] 1) Identificar componente React que renderiza la tabla de “Alertas en este curso” usando v_alertas
-- [x] 2) Implementar agrupación en useMemo por alumno_id antes del render
-- [x] 3) Aplicar reglas de consolidación booleana y numérica (mínimo/máximo)
-- [x] 4) Actualizar el filtrado por búsqueda para que se aplique sobre la lista agrupada
-- [x] 5) Verificar que la tabla muestre 1 fila por alumno y mantiene el resto de funcionalidades
-
-
+- [ ] Entender estructura actual del ProfesorDashboard y dónde se muestran nombres/IDs de alumnos
+- [ ] Actualizar `src/pages/profesor/profesor_Dashboard.jsx`: agregar `useNavigate` y handler `handleGoAlumno(alumnoId)`
+- [ ] Hacer clickeable el nombre en tabla de "Alertas en este curso" usando `a.alumno_id`
+- [ ] Hacer clickeable el nombre en tabla de "Registro de asistencia" usando `a.id`
+- [ ] Aplicar estilos tipo link (cursor pointer, color azul, hover)
+- [ ] Verificar que no se modifique lógica ni queries Supabase
 

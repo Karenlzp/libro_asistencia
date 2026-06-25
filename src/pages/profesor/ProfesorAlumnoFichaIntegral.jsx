@@ -9,8 +9,10 @@ import {
   getProfesorAlumnoPieObservaciones,
   getProfesorAlumnoPieRetiros,
   getProfesorAlumnoPieInformes,
-  getInformeUrl,
 } from '../../services/profesorService'
+
+import { getInformeUrl } from '../../services/pieInformeService'
+
 
 function formatFecha(iso) {
   if (!iso) return '—'
@@ -45,6 +47,7 @@ export default function ProfesorAlumnoFichaIntegral({ profile }) {
   const [status, setStatus] = useState(null)
 
   const [alumno, setAlumno] = useState(null)
+  const [alumnoError, setAlumnoError] = useState(false)
   const [tab, setTab] = useState('resumen')
 
   // Resumen
@@ -82,30 +85,88 @@ export default function ProfesorAlumnoFichaIntegral({ profile }) {
     setLoading(true)
     setStatus(null)
 
-    const [r, n, asi, cond, po, pr, pi] = await Promise.all([
-      getProfesorAlumnoFichaResumen({ alumnoId }),
-      getProfesorAlumnoNotas({ alumnoId }),
-      getProfesorAlumnoAsistenciaHistorial({ alumnoId }),
-      getProfesorAlumnoConducta({ alumnoId }),
-      getProfesorAlumnoPieObservaciones({ alumnoId }),
-      getProfesorAlumnoPieRetiros({ alumnoId }),
-      getProfesorAlumnoPieInformes({ alumnoId }),
-    ])
+    console.log('ProfesorAlumnoFichaIntegral - alumnoId:', alumnoId)
 
-    if (r?.error) return notify('error', r.error.message)
-    if (n?.error) return notify('error', n.error.message)
+    try {
+      const resultados = await Promise.allSettled([
+        getProfesorAlumnoFichaResumen({ alumnoId }),
+        getProfesorAlumnoNotas({ alumnoId }),
+        getProfesorAlumnoAsistenciaHistorial({ alumnoId }),
+        getProfesorAlumnoConducta({ alumnoId }),
+        getProfesorAlumnoPieObservaciones({ alumnoId }),
+        getProfesorAlumnoPieRetiros({ alumnoId }),
+        getProfesorAlumnoPieInformes({ alumnoId }),
+      ])
 
-    setAlumno(r?.data?.alumno ?? null)
-    setResumen(r?.data?.resumen ?? resumen)
-    setNotas(n?.data ?? [])
-    setAsistencia(asi?.data ?? [])
-    setAnotaciones(cond?.data ?? [])
-    setPieObservaciones(po?.data ?? [])
-    setPieRetiros(pr?.data ?? [])
-    setPieInformes(pi?.data ?? [])
+      console.log('ProfesorAlumnoFichaIntegral - resultados load:', resultados)
 
-    setLoading(false)
+      const safeGet = (idx) => {
+        const res = resultados[idx]
+        if (!res) return { data: null, error: null }
+        if (res.status === 'rejected') return { data: null, error: res.reason }
+        return res.value || { data: null, error: null }
+      }
+
+      const r = safeGet(0)
+      const n = safeGet(1)
+      const asi = safeGet(2)
+      const cond = safeGet(3)
+      const po = safeGet(4)
+      const pr = safeGet(5)
+      const pi = safeGet(6)
+
+      // Debug obligatorio
+      console.log('alumnoId:', alumnoId)
+      console.log('resumen result:', r)
+      console.log('alumno final:', r?.data?.alumno)
+
+      // Separar error SOLO del alumno-resumen
+      const alumnoResumenFalló = Boolean(r?.error)
+      setAlumnoError(alumnoResumenFalló)
+      console.log('alumnoError (solo resumen):', alumnoResumenFalló)
+
+      if (r?.error) {
+        console.warn('Resumen fallo:', r.error)
+        notify('error', r.error?.message ?? 'Error cargando resumen del alumno')
+      }
+      if (n?.error) {
+        console.warn('Notas fallo:', n.error)
+        notify('error', n.error?.message ?? 'Error cargando notas del alumno')
+      }
+      if (asi?.error) {
+        console.warn('Asistencia fallo:', asi.error)
+      }
+      if (cond?.error) {
+        console.warn('Conducta fallo:', cond.error)
+      }
+      if (po?.error) {
+        console.warn('PIE Observaciones fallo:', po.error)
+      }
+      if (pr?.error) {
+        console.warn('PIE Retiros fallo:', pr.error)
+      }
+      if (pi?.error) {
+        console.warn('PIE Informes fallo:', pi.error)
+      }
+
+      const alumnoFromResumen = r?.data?.alumno ?? null
+      setAlumno(alumnoFromResumen ?? { nombre: 'Alumno no disponible', cursos: null })
+      setResumen(r?.data?.resumen ?? resumen)
+      setNotas(n?.data ?? [])
+      setAsistencia(asi?.data ?? [])
+      setAnotaciones(cond?.data ?? [])
+      setPieObservaciones(po?.data ?? [])
+      setPieRetiros(pr?.data ?? [])
+      setPieInformes(pi?.data ?? [])
+    } catch (err) {
+      console.error('Error cargando ficha alumno (load outer)', { alumnoId, err })
+      notify('error', err?.message ?? 'Error inesperado cargando la ficha')
+    } finally {
+      setLoading(false)
+    }
   }
+
+
 
   useEffect(() => {
     if (!profile?.id) return
@@ -127,27 +188,19 @@ export default function ProfesorAlumnoFichaIntegral({ profile }) {
     )
   }
 
-  if (!alumno) {
-    return (
-      <div className="empty-state">
-        <div className="empty-state-icon">🧩</div>
-        <p>No se pudo cargar la ficha del alumno.</p>
-        <button className="button ghost" onClick={() => navigate('/profesor')}>
-          ← Volver
-        </button>
-      </div>
-    )
-  }
+  // Mantener un “fallback UI” pero NUNCA bloquear la vista completa.
+  // (Importante: por diseño, el componente ya renderiza el layout aunque el alumno sea null.)
+  const alumnoNombre = alumno?.nombre ?? 'Alumno no disponible'
+  const alumnoCurso =
+    alumno?.cursos ? `Curso ${alumno.cursos.nivel}°${alumno.cursos.letra}` : '—'
 
   return (
     <div>
       <div className="card section" style={{ paddingBottom: 18 }}>
         <div className="card-header" style={{ marginBottom: 0 }}>
           <div>
-            <div className="card-title">{alumno.nombre}</div>
-            <div className="card-subtitle">
-              {alumno.cursos ? `Curso ${alumno.cursos.nivel}°${alumno.cursos.letra}` : '—'}
-            </div>
+            <div className="card-title">{alumnoNombre}</div>
+            <div className="card-subtitle">{alumnoCurso}</div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <button className="button ghost" onClick={() => navigate('/profesor')}>
@@ -155,6 +208,15 @@ export default function ProfesorAlumnoFichaIntegral({ profile }) {
             </button>
           </div>
         </div>
+
+        {alumnoError === true && (
+          <div style={{ marginTop: 12 }}>
+            <div className="empty-state" style={{ margin: 0 }}>
+              <div className="empty-state-icon">🧩</div>
+              <p>Alumno no disponible: se cargaron el resto de datos de forma parcial.</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {status && <div className={`alert ${status.type}`} style={{ marginBottom: 16 }}>{status.msg}</div>}
@@ -247,9 +309,10 @@ export default function ProfesorAlumnoFichaIntegral({ profile }) {
                 <tbody>
                   {notas.map(n => (
                     <tr key={`${n.evaluacion_id}-${n.alumno_id}-${n.created_at ?? ''}`.replace(/undefined/g, '')}>
-                      <td>{n.evaluacion_nombre ?? '—'}</td>
-                      <td>{n.asignatura_nombre ?? '—'}</td>
-                      <td style={{ color: 'var(--muted)' }}>{n.fecha ?? '—'}</td>
+                      <td>{n.evaluaciones?.nombre ?? '—'}</td>
+                      <td>{n.evaluaciones?.asignaturas?.nombre ?? '—'}</td>
+                      <td style={{ color: 'var(--muted)' }}>{n.evaluaciones?.fecha ?? n.created_at ?? '—'}</td>
+
                       <td>
                         <span className={`nota-pill ${getNotaClass(n.nota)}`}>{n.nota ?? '—'}</span>
                       </td>
