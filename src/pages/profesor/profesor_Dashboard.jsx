@@ -47,11 +47,66 @@ export default function ProfesorDashboard({ profile }) {
     return alumnos.filter(a => (a?.nombre ?? '').toLowerCase().includes(q))
   }, [alumnos, searchAlumno])
 
+  const alertasAgrupadas = useMemo(() => {
+    const map = new Map()
+
+    for (const a of alertas ?? []) {
+      const alumnoId = a.alumno_id
+      if (!alumnoId) continue
+
+      const existente = map.get(alumnoId)
+      if (!existente) {
+        map.set(alumnoId, {
+          alumno_id: alumnoId,
+          alumno: a.alumno ?? '—',
+
+          alerta_promedio: !!a.alerta_promedio,
+          alerta_asistencia: !!a.alerta_asistencia,
+          alerta_conducta: !!a.alerta_conducta,
+
+          porcentaje_asistencia: a.porcentaje_asistencia ?? null,
+          promedio_general: a.promedio_general ?? null,
+          anotaciones_negativas: a.anotaciones_negativas ?? 0,
+        })
+        continue
+      }
+
+      existente.alerta_promedio = existente.alerta_promedio || !!a.alerta_promedio
+      existente.alerta_asistencia = existente.alerta_asistencia || !!a.alerta_asistencia
+      existente.alerta_conducta = existente.alerta_conducta || !!a.alerta_conducta
+
+      // Numéricos:
+      // - porcentaje_asistencia: usar MÁS BAJO
+      // - promedio_general: usar MÁS BAJO
+      // - anotaciones_negativas: usar MÁS ALTO
+      const pct = a.porcentaje_asistencia
+      if (pct != null) {
+        if (existente.porcentaje_asistencia == null) existente.porcentaje_asistencia = pct
+        else existente.porcentaje_asistencia = Math.min(Number(existente.porcentaje_asistencia), Number(pct))
+      }
+
+      const prom = a.promedio_general
+      if (prom != null) {
+        if (existente.promedio_general == null) existente.promedio_general = prom
+        else existente.promedio_general = Math.min(Number(existente.promedio_general), Number(prom))
+      }
+
+      const neg = a.anotaciones_negativas
+      if (neg != null) {
+        existente.anotaciones_negativas = Math.max(Number(existente.anotaciones_negativas ?? 0), Number(neg))
+      }
+    }
+
+    return Array.from(map.values())
+  }, [alertas])
+
   const alertasFiltradas = useMemo(() => {
     const q = searchAlumno.trim().toLowerCase()
-    if (!q) return alertas
-    return alertas.filter(a => (a?.alumno ?? '').toLowerCase().includes(q))
-  }, [alertas, searchAlumno])
+    const lista = alertasAgrupadas
+    if (!q) return lista
+    return lista.filter(a => (a?.alumno ?? '').toLowerCase().includes(q))
+  }, [alertasAgrupadas, searchAlumno])
+
 
   const [evalSelId, setEvalSelId] = useState('')
   const [notasEval, setNotasEval] = useState([])
@@ -241,11 +296,14 @@ export default function ProfesorDashboard({ profile }) {
 
   const handleGuardarAsistencia = async () => {
     if (!cursoId) return notify('error', 'Selecciona un curso primero.')
+    if (!asignaturaId) return notify('error', 'Selecciona una asignatura primero.')
+    if (!profile?.id) return notify('error', 'Profesor no disponible.')
+
     const registros = Object.entries(asistencia)
       .filter(([, estado]) => estado !== null)
       .map(([alumnoId, estado]) => ({ alumnoId, estado }))
 
-    const { error } = await registrarAsistenciaMasiva(cursoId, fechaAsist, registros)
+    const { error } = await registrarAsistenciaMasiva(cursoId, asignaturaId, profile.id, fechaAsist, registros)
     if (error) return notify('error', 'Error al guardar asistencia: ' + error.message)
 
     setAsistenciaGuardada({ ...asistencia })

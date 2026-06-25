@@ -107,19 +107,29 @@
 
     // ── Registrar asistencia masiva de un curso ───────────────────────────────────
     // registros = [{ alumnoId, estado }]
-    export async function registrarAsistenciaMasiva(cursoId, fecha, registros) {
-    const rows = registros.map(r => ({
-        alumno_id: r.alumnoId,
-        curso_id:  cursoId,
-        fecha,
-        estado:    r.estado,
-    }))
+    export async function registrarAsistenciaMasiva(cursoId, asignaturaId, profesorId, fecha, registros = []) {
+        if (!Array.isArray(registros)) {
+            return { data: null, error: new Error('registrarAsistenciaMasiva: "registros" debe ser un array') }
+        }
 
-    const { data, error } = await supabase
-        .from('asistencia')
-        .upsert(rows, { onConflict: 'alumno_id,fecha' })
-        .select()
-    return { data, error }
+        const rows = registros.map(r => ({
+            alumno_id: r.alumnoId,
+            curso_id: cursoId,
+            asignatura_id: asignaturaId,
+            profesor_id: profesorId,
+            fecha,
+            estado: r.estado,
+        }))
+
+        if (rows.length === 0) {
+            return { data: [], error: null }
+        }
+
+        const { data, error } = await supabase
+            .from('asistencia')
+            .upsert(rows, { onConflict: 'alumno_id,fecha,asignatura_id' })
+            .select()
+        return { data, error }
     }
 
     // ── Crear anotación ───────────────────────────────────────────────────────────

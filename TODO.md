@@ -1,5 +1,8 @@
-# TODO
-- [ ] Reemplazar `src/pages/profesor/profesor_Dashboard.jsx` por una versión reconstruida desde `return (` hasta el final para corregir balanceo de llaves/JSX sin cambiar lógica.
-- [ ] Ejecutar `npm run build` y confirmar que termina sin errores.
-- [ ] Reportar líneas/bloques rotos, correcciones aplicadas y resultado del build.
+- [x] 1) Identificar componente React que renderiza la tabla de “Alertas en este curso” usando v_alertas
+- [x] 2) Implementar agrupación en useMemo por alumno_id antes del render
+- [x] 3) Aplicar reglas de consolidación booleana y numérica (mínimo/máximo)
+- [x] 4) Actualizar el filtrado por búsqueda para que se aplique sobre la lista agrupada
+- [x] 5) Verificar que la tabla muestre 1 fila por alumno y mantiene el resto de funcionalidades
+
+
 
