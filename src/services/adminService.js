@@ -104,7 +104,7 @@ export async function getAsignaciones() {
 
 // ── Hoja de vida completa de un alumno ────────────────────────────────────────
 export async function getHojaVidaAlumno(alumnoId) {
-  const [notas, asistencia, anotaciones, retiros, observaciones] = await Promise.all([
+  const [notas, asistencia, anotaciones, retiros, observaciones, pieRetiros, pieObservaciones, pieInformes] = await Promise.all([
     supabase
       .from('detalle_nota')
       .select(`
@@ -133,13 +133,42 @@ export async function getHojaVidaAlumno(alumnoId) {
       .select(`contenido, fecha, usuarios!observaciones_profesor_id_fkey ( nombre )`)
       .eq('alumno_id', alumnoId)
       .order('fecha', { ascending: false }),
+    supabase
+      .from('pie_retiros')
+      .select('id, motivo, tipo, estado, created_at, fecha_retorno, hora_retorno, alumno_id, curso_id, pie_id')
+      .eq('alumno_id', alumnoId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('pie_observaciones')
+      .select('id, tipo_intervencion, observacion, resultado, created_at, alumno_id')
+      .eq('alumno_id', alumnoId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('pie_informes')
+      .select('*')
+      .eq('alumno_id', alumnoId)
+      .order('created_at', { ascending: false }),
   ])
+
+  // Combinar retiros: regulares + PIE
+  const retirosTotal = [
+    ...(retiros.data ?? []).map(r => ({ ...r, fuente: 'regular', fecha_display: r.fecha })),
+    ...(pieRetiros.data ?? []).map(r => ({ ...r, fuente: 'pie', fecha_display: r.created_at }))
+  ].sort((a, b) => new Date(b.fecha_display) - new Date(a.fecha_display))
+
+  // Combinar observaciones: regulares + PIE
+  const observacionesTotal = [
+    ...(observaciones.data ?? []).map(o => ({ ...o, fuente: 'regular', fecha_display: o.fecha, contenido: o.contenido })),
+    ...(pieObservaciones.data ?? []).map(o => ({ ...o, fuente: 'pie', fecha_display: o.created_at, contenido: o.observacion }))
+  ].sort((a, b) => new Date(b.fecha_display) - new Date(a.fecha_display))
+
   return {
     notas:         notas.data         ?? [],
     asistencia:    asistencia.data    ?? [],
     anotaciones:   anotaciones.data   ?? [],
-    retiros:       retiros.data       ?? [],
-    observaciones: observaciones.data ?? [],
+    retiros:       retirosTotal,
+    observaciones: observacionesTotal,
+    pieInformes:   pieInformes.data   ?? [],
   }
 }
 

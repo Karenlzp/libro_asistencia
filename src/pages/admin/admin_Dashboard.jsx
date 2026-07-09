@@ -1875,6 +1875,7 @@ export default function AdminDashboard({ profile }) {
                   { key: 'anotaciones',   label: `Anotaciones (${hojaVida.anotaciones.length})` },
                   { key: 'retiros',       label: `Retiros (${hojaVida.retiros.length})` },
                   { key: 'observaciones', label: `Observaciones (${hojaVida.observaciones.length})` },
+                  { key: 'informes',      label: `Informes PIE (${hojaVida.pieInformes?.length ?? 0})` },
                 ].map(({ key, label }) => (
                   <button key={key} className={`tab-btn ${tabHoja === key ? 'active' : ''}`} onClick={() => setTabHoja(key)}>
                     {label}
@@ -2027,14 +2028,15 @@ export default function AdminDashboard({ profile }) {
                   {hojaVida.retiros.length === 0
                     ? <div className="empty-state"><div className="empty-state-icon">🚪</div><p>Sin retiros.</p></div>
                     : <div className="table-wrap"><table>
-                        <thead><tr><th>Tipo</th><th>Motivo</th><th>Profesor</th><th>Fecha</th></tr></thead>
+                        <thead><tr><th>Tipo</th><th>Motivo</th><th>Profesor</th><th>Fuente</th><th>Fecha</th></tr></thead>
                         <tbody>
                           {hojaVida.retiros.map((r, i) => (
                             <tr key={i}>
                               <td><span className="badge default">{r.tipo}</span></td>
                               <td>{r.motivo}</td>
                               <td>{r.usuarios?.nombre ?? '—'}</td>
-                              <td>{r.fecha}</td>
+                              <td><span className={`badge ${r.fuente === 'pie' ? 'positiva' : 'default'}`}>{r.fuente === 'pie' ? 'PIE' : 'Regular'}</span></td>
+                              <td>{new Date(r.fecha_display).toLocaleDateString('es-CL')}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -2046,14 +2048,72 @@ export default function AdminDashboard({ profile }) {
               {/* Observaciones */}
               {tabHoja === 'observaciones' && (
                 <div className="card">
-                  <div className="card-header"><div className="card-title">Observaciones del profesor</div></div>
+                  <div className="card-header"><div className="card-title">Observaciones</div></div>
                   {hojaVida.observaciones.length === 0
                     ? <div className="empty-state"><div className="empty-state-icon">📋</div><p>Sin observaciones.</p></div>
                     : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {hojaVida.observaciones.map((o, i) => (
-                          <div key={i} style={{ padding: '12px 16px', background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--blue)' }}>
-                            <div style={{ fontSize: '.84rem', marginBottom: 5 }}>{o.contenido}</div>
-                            <div style={{ fontSize: '.74rem', color: 'var(--gray-500)' }}>{o.usuarios?.nombre ?? '—'} · {o.fecha}</div>
+                          <div key={i} style={{ padding: '12px 16px', background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)', borderLeft: `3px solid ${o.fuente === 'pie' ? 'var(--green)' : 'var(--blue)'}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 8 }}>
+                              <div style={{ flex: 1 }}>
+                                {o.fuente === 'pie' && o.tipo_intervencion && (
+                                  <div style={{ fontSize: '.74rem', fontWeight: 600, color: 'var(--green)', marginBottom: 4 }}>
+                                    {o.tipo_intervencion}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: '.84rem', marginBottom: 5 }}>{o.contenido}</div>
+                                {o.fuente === 'pie' && o.resultado && (
+                                  <div style={{ fontSize: '.74rem', color: 'var(--muted)', marginBottom: 3 }}>
+                                    <strong>Resultado:</strong> {o.resultado}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: '.74rem', color: 'var(--gray-500)' }}>
+                                  {o.usuarios?.nombre ?? '—'} · {new Date(o.fecha_display).toLocaleDateString('es-CL')}
+                                </div>
+                              </div>
+                              {o.fuente === 'pie' && <span className="badge positiva" style={{ whiteSpace: 'nowrap' }}>PIE</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                  }
+                </div>
+              )}
+
+              {/* Informes PIE */}
+              {tabHoja === 'informes' && (
+                <div className="card">
+                  <div className="card-header"><div className="card-title">Informes PIE</div></div>
+                  {hojaVida.pieInformes?.length === 0
+                    ? <div className="empty-state"><div className="empty-state-icon">📄</div><p>Sin informes PIE.</p></div>
+                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {hojaVida.pieInformes?.map((inf, i) => (
+                          <div key={i} style={{ padding: '14px 16px', background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--green)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 8, marginBottom: 6 }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 600, fontSize: '.95rem' }}>{inf.titulo || 'Informe PIE'}</div>
+                                <div style={{ fontSize: '.74rem', color: 'var(--gray-500)', marginTop: 2 }}>
+                                  {new Date(inf.created_at).toLocaleDateString('es-CL')}
+                                </div>
+                              </div>
+                              <span className="badge positiva">PIE</span>
+                            </div>
+                            {inf.descripcion && (
+                              <div style={{ fontSize: '.84rem', color: 'var(--gray-700)', marginBottom: 8, whiteSpace: 'pre-wrap' }}>
+                                {inf.descripcion}
+                              </div>
+                            )}
+                            {inf.archivo_url && (
+                              <a 
+                                href={inf.archivo_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="button ghost"
+                                style={{ fontSize: '.78rem', padding: '4px 8px' }}
+                              >
+                                📎 Ver archivo
+                              </a>
+                            )}
                           </div>
                         ))}
                       </div>

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import { addNotification } from '../../services/notificationService'
 import {
   createObservacionPie,
   createRetiroPie,
@@ -15,6 +14,7 @@ import {
   getAlertasAlumnoPie,
   registrarRetornoPie,
 } from '../../services/pieService'
+import { getAsistenciaCursoFecha } from '../../services/profesorService'
 
 import {
   createInformePie,
@@ -39,6 +39,16 @@ function formatFecha(iso) {
   }
 }
 
+function toLocalIsoDate(iso) {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export default function PieAlumnoDetalle({ profile }) {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -56,10 +66,15 @@ export default function PieAlumnoDetalle({ profile }) {
   const [anotaciones, setAnotaciones] = useState([])
   const [resumen, setResumen] = useState(null)
   const [asistencias, setAsistencias] = useState([])
+  const [fechaAsist, setFechaAsist] = useState(new Date().toISOString().slice(0, 10))
+  const [asistenciaMap, setAsistenciaMap] = useState({})
+  const [fechaAsistRows, setFechaAsistRows] = useState([])
+  const [showAllAsistencia, setShowAllAsistencia] = useState(false)
   const [retiros, setRetiros] = useState([])
   const [informes, setInformes] = useState([])
   const [notas, setNotas] = useState([])
   const [alertas, setAlertas] = useState(null)
+  const [debugLoads, setDebugLoads] = useState(null)
 
   const [informeForm, setInformeForm] = useState({
     titulo: '',
@@ -93,13 +108,8 @@ export default function PieAlumnoDetalle({ profile }) {
   const load = async () => {
     setLoading(true)
     setStatus(null)
-
-    const handleError = (error, fallbackMessage = 'Ocurrió un error al cargar el detalle PIE.') => {
-      setLoading(false)
-      notify('error', error?.message ?? fallbackMessage)
-      return true
-    }
-
+    // Hacemos las consultas en paralelo pero no devolvemos inmediatamente
+    // si alguna de las consultas auxiliares falla: mostramos lo que haya.
     try {
       const [det, obs, anot, res, asi, ret, inf, notasData, alertasData] = await Promise.all([
         getAlumnoPieDetail(alumnoId),
@@ -113,36 +123,82 @@ export default function PieAlumnoDetalle({ profile }) {
         getAlertasAlumnoPie(alumnoId),
       ])
 
-      if (det.error || !det.data) {
-        return handleError(det.error, 'No se pudo cargar el alumno PIE.')
-      }
-      if (obs.error) return handleError(obs.error)
-      if (anot.error) return handleError(anot.error)
+      // Log para diagnóstico en consola del navegador
+      // eslint-disable-next-line no-console
+      console.debug('PIE detail loads:', { det, obs, anot, res, asi, ret, inf, notasData, alertasData })
+      setDebugLoads({ det, obs, anot, res, asi, ret, inf, notasData, alertasData })
 
-      // v_pie_resumen puede no existir para el alumno: no debe romper la pantalla
+      if (det?.error) {
+        notify('error', det.error.message || 'Error al cargar alumno')
+        setLoading(false)
+        return
+      }
+
+      // Asignamos datos aunque algunas llamadas auxiliares hayan fallado.
+      setAlumno(det?.data ?? null)
+
+      setObservaciones(obs?.error ? [] : (obs.data ?? []))
+      setAnotaciones(anot?.error ? [] : (anot.data ?? []))
+
       if (res?.error && res.error.message) {
         setResumen(null)
       } else {
         setResumen(res?.data ?? null)
       }
 
-      if (asi?.error) return handleError(asi.error)
-      if (ret.error) return handleError(ret.error)
-      if (inf.error) return handleError(inf.error)
-      if (notasData?.error) return handleError(notasData.error)
-      if (alertasData?.error) return handleError(alertasData.error)
+      const asistData = asi?.error ? [] : (asi.data ?? [])
+      setAsistencias(asistData)
+      // Inicializar mapa de asistencia y filas filtradas por la fecha seleccionada
+      const map = {}
+      for (const r of asistData) map[r.alumno_id] = r.estado
+      setAsistenciaMap(map)
+      const rows = asistData.filter((r) => toLocalIsoDate(r.fecha) === fechaAsist)
+      setFechaAsistRows(rows)
+      setRetiros(ret?.error ? [] : (ret.data ?? []))
+      setInformes(inf?.error ? [] : (inf.data ?? []))
+      setNotas(notasData?.error ? [] : (notasData.data ?? []))
+      setAlertas(alertasData?.error ? null : (alertasData.data ?? null))
 
-      setAlumno(det.data)
-      setObservaciones(obs.data ?? [])
-      setAnotaciones(anot.data ?? [])
-      setAsistencias(asi.data ?? [])
-      setRetiros(ret.data ?? [])
-      setInformes(inf.data ?? [])
-      setNotas(notasData.data ?? [])
-      setAlertas(alertasData.data ?? null)
+      // Si hubo errores en consultas auxiliares, notificamos cuáles fueron
+      const mapping = {
+        obs: 'observaciones',
+        anot: 'anotaciones',
+        asi: 'asistencia',
+        ret: 'retiros',
+        inf: 'informes',
+        notasData: 'notas',
+        alertasData: 'alertas',
+      }
+
+      const responses = { obs, anot, asi, ret, inf, notasData, alertasData }
+      const failedKeys = Object.keys(responses).filter((k) => responses[k] && responses[k].error)
+      if (failedKeys.length > 0) {
+        const labels = failedKeys.map((k) => mapping[k] ?? k)
+        const message = `Secciones con error: ${labels.join(', ')}`
+        notify('error', message)
+        setStatus({ type: 'error', msg: message })
+      }
+
       setLoading(false)
-    } catch (error) {
-      handleError(error, 'Ocurrió un error al cargar los datos del alumno PIE.')
+    } catch (e) {
+      notify('error', e?.message || 'Error inesperado al cargar detalle.')
+      setLoading(false)
+    }
+  }
+
+  const handleFechaAsistChange = async (fecha) => {
+    setFechaAsist(fecha)
+    // Filtrar las asistencias ya cargadas para el alumno según la fecha seleccionada
+    try {
+      const rows = (asistencias ?? []).filter((r) => toLocalIsoDate(r.fecha) === fecha)
+      setFechaAsistRows(rows)
+      // También actualizar el mapa simple por alumno si la información está disponible
+      const map = {}
+      for (const r of (asistencias ?? [])) map[r.alumno_id] = r.estado
+      setAsistenciaMap(map)
+    } catch (e) {
+      setFechaAsistRows([])
+      setAsistenciaMap({})
     }
   }
 
@@ -163,7 +219,7 @@ export default function PieAlumnoDetalle({ profile }) {
     if (!obsForm.resultado.trim()) return notify('error', 'Escribe el resultado.')
     if (!alumno) return
 
-    const { data, error } = await createObservacionPie({
+    const { error } = await createObservacionPie({
       alumnoId: alumno.id,
       pieId: profile.id,
       tipoIntervencion: obsForm.tipo_intervencion,
@@ -173,15 +229,6 @@ export default function PieAlumnoDetalle({ profile }) {
     })
 
     if (error) return notify('error', error.message)
-
-    addNotification({
-      title: 'Nueva observación PIE',
-      message: `Se ha registrado una observación para ${alumno.nombre}.`,
-      entity: 'pie_observacion',
-      entityId: data?.id ?? null,
-      targetRoles: ['profesor'],
-      metadata: { alumnoId: alumno.id },
-    })
 
     setObsForm({ tipo_intervencion: 'Observación general', observacion: '', resultado: '' })
     await load()
@@ -204,7 +251,7 @@ export default function PieAlumnoDetalle({ profile }) {
 
     const cursoId = alumno.curso_id
 
-    const { data, error } = await createRetiroPie({
+    const { error } = await createRetiroPie({
       alumnoId: alumno.id,
       cursoId,
       pieId: profile.id,
@@ -227,34 +274,17 @@ export default function PieAlumnoDetalle({ profile }) {
 
     setRetiroOpen(false)
     setRetiroForm({ motivo: '', tipo: 'retiro' })
-    addNotification({
-      title: 'Nuevo retiro PIE',
-      message: `Se ha registrado un retiro para ${alumno.nombre}.`,
-      entity: 'pie_retiro',
-      entityId: data?.id ?? null,
-      targetRoles: ['profesor'],
-      metadata: { alumnoId: alumno.id },
-    })
     await load()
     notify('success', 'Retiro registrado.')
   }
 
   const handleRegistrarRetorno = async (retiroId) => {
-    const { data, error } = await registrarRetornoPie(retiroId, profile)
+    const { error } = await registrarRetornoPie(retiroId, profile)
 
     if (error) {
       notify('error', error.message)
       return
     }
-
-    addNotification({
-      title: 'Retorno de retiro PIE',
-      message: `Se registró el retorno del retiro para ${alumno.nombre}.`,
-      entity: 'pie_retiro',
-      entityId: retiroId,
-      targetRoles: ['profesor'],
-      metadata: { alumnoId: alumno.id },
-    })
 
     await load()
     notify('success', 'Retorno registrado correctamente.')
@@ -277,10 +307,28 @@ export default function PieAlumnoDetalle({ profile }) {
       <div className="empty-state">
         <div className="empty-state-icon">🧩</div>
         <p>No se pudo cargar el alumno PIE.</p>
+        {debugLoads && (
+          <details style={{ marginTop: 12 }}>
+            <summary>Ver diagnóstico de carga (solo para depuración)</summary>
+            <pre style={{ maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+              {JSON.stringify(debugLoads, null, 2)}
+            </pre>
+          </details>
+        )}
         <button className="button ghost" onClick={() => navigate('/pie/dashboard')}>← Volver</button>
       </div>
     )
   }
+
+  // Mostrar diagnóstico también cuando alumno se carga (útil para identificar secciones con error)
+  const diagPanel = debugLoads ? (
+    <details style={{ marginTop: 12 }}>
+      <summary>Ver diagnóstico de carga (solo para depuración)</summary>
+      <pre style={{ maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+        {JSON.stringify(debugLoads, null, 2)}
+      </pre>
+    </details>
+  ) : null
 
   return (
     <div>
@@ -496,14 +544,84 @@ export default function PieAlumnoDetalle({ profile }) {
             <div className="card-header">
               <div>
                 <div className="card-title">Asistencia PIE</div>
-                <div className="card-subtitle">Historial de asistencia con fecha, asignatura y estado</div>
+                <div className="card-subtitle">Selecciona fecha del calendario para ver resumen de asistencia</div>
               </div>
             </div>
 
-            {asistencias.length === 0 ? (
+            {!alumno?.curso_id ? (
               <div className="empty-state">
                 <div className="empty-state-icon">📅</div>
-                <p>No hay asistencia registrada para este alumno.</p>
+                <p>No está disponible el curso del alumno para consultar asistencia.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Fecha</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={fechaAsist}
+                    onChange={(e) => { setShowAllAsistencia(false); void handleFechaAsistChange(e.target.value) }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginLeft: 12 }}>
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => setShowAllAsistencia((s) => !s)}
+                  >
+                    {showAllAsistencia ? 'Ocultar todo' : 'Mostrar todo'}
+                  </button>
+                </div>
+                <div style={{ marginLeft: 'auto' }}>
+                  <span className="badge">Curso: {alumno.cursos ? `${alumno.cursos.nivel}°${alumno.cursos.letra}` : '—'}</span>
+                </div>
+              </div>
+            )}
+            {showAllAsistencia ? (
+              asistencias.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-state-icon">📅</div>
+                  <p>No hay registros de asistencia para este alumno.</p>
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Asignatura</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {asistencias.map((a, idx) => {
+                        const estadoRaw = a.estado ?? ''
+                        const estado = String(estadoRaw).trim().toLowerCase()
+                        const isPresente = estado === 'presente'
+                        const isAusente = estado === 'ausente'
+                        const badgeBg = isPresente ? 'var(--green)' : isAusente ? 'var(--red)' : 'var(--gray-300)'
+                        const badgeColor = 'black'
+                        return (
+                          <tr key={String(a.asistencia_id ?? a.id ?? idx)}>
+                            <td style={{ color: 'var(--muted)' }}>{formatFecha(a.fecha)}</td>
+                            <td>{a.asignatura ?? '—'}</td>
+                            <td>
+                              <span className="badge" style={{ background: badgeBg, color: badgeColor }}>
+                                {a.estado ?? '—'}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            ) : fechaAsistRows.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">📅</div>
+                <p>No hay registros de asistencia para la fecha seleccionada.</p>
               </div>
             ) : (
               <div className="table-wrap">
@@ -516,30 +634,19 @@ export default function PieAlumnoDetalle({ profile }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {asistencias.map((a, idx) => {
+                    {fechaAsistRows.map((a, idx) => {
                       const estadoRaw = a.estado ?? ''
                       const estado = String(estadoRaw).trim().toLowerCase()
-
                       const isPresente = estado === 'presente'
                       const isAusente = estado === 'ausente'
-
                       const badgeBg = isPresente ? 'var(--green)' : isAusente ? 'var(--red)' : 'var(--gray-300)'
-                      const badgeColor = 'white'
-
+                      const badgeColor = 'black'
                       return (
-                        <tr
-                          key={String(a.asistencia_id ?? a.id ?? idx)}
-                        >
+                        <tr key={String(a.asistencia_id ?? a.id ?? idx)}>
                           <td style={{ color: 'var(--muted)' }}>{formatFecha(a.fecha)}</td>
                           <td>{a.asignatura ?? '—'}</td>
                           <td>
-                            <span
-                              className="badge"
-                              style={{
-                                background: badgeBg,
-                                color: badgeColor,
-                              }}
-                            >
+                            <span className="badge" style={{ background: badgeBg, color: badgeColor }}>
                               {a.estado ?? '—'}
                             </span>
                           </td>
@@ -575,7 +682,7 @@ export default function PieAlumnoDetalle({ profile }) {
                   const tipo = a.tipo ?? '—'
                   const isPos = String(tipo) === 'positiva'
                   const badgeBg = isPos ? 'var(--green)' : 'var(--red)'
-                  const badgeColor = 'white'
+                  const badgeColor = 'black'
 
                   return (
                     <div
@@ -645,7 +752,7 @@ export default function PieAlumnoDetalle({ profile }) {
                 if (uploadRes.error) return notify('error', uploadRes.error.message)
                 if (!uploadRes.data?.path) return notify('error', 'No se pudo obtener la ruta del archivo.')
 
-                const { data, error } = await createInformePie({
+                const { error } = await createInformePie({
                   alumnoId: alumno.id,
                   pieId: profile.id,
                   titulo: informeForm.titulo.trim(),
@@ -655,15 +762,6 @@ export default function PieAlumnoDetalle({ profile }) {
                 })
 
                 if (error) return notify('error', error.message)
-
-                addNotification({
-                  title: 'Nuevo informe PIE',
-                  message: `Se ha subido un informe para ${alumno.nombre}.`,
-                  entity: 'pie_informe',
-                  entityId: data?.id ?? null,
-                  targetRoles: ['profesor'],
-                  metadata: { alumnoId: alumno.id },
-                })
 
                 setInformeForm({ titulo: '', descripcion: '', archivo: null })
                 await load()
@@ -826,7 +924,7 @@ export default function PieAlumnoDetalle({ profile }) {
                       const esNumero = !Number.isNaN(notaNum)
 
                       const badgeBg = esNumero && notaNum < 4.0 ? 'var(--red)' : 'var(--green)'
-                      const badgeColor = 'white'
+                      const badgeColor = 'black'
 
                       return (
                         <tr key={String(n.nota_id ?? n.id ?? idx)}>
@@ -1012,43 +1110,67 @@ export default function PieAlumnoDetalle({ profile }) {
           </div>
 
           {retiroOpen && (
-            <div className="card" style={{ borderLeft: '3px solid var(--blue)' }}>
-              <div className="card-header">
-                <div>
-                  <div className="card-title">Registrar retiro</div>
-                  <div className="card-subtitle">Crea un registro en pie_retiros</div>
+            <div
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.35)',
+                zIndex: 1200,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '16px',
+              }}
+            >
+              <div
+                style={{
+                  width: '100%',
+                  maxWidth: 560,
+                  background: 'white',
+                  borderRadius: '18px',
+                  boxShadow: '0 24px 80px rgba(0,0,0,0.18)',
+                  overflow: 'hidden',
+                }}
+              >
+                <div className="card-header" style={{ marginBottom: 0, padding: '24px 24px 16px' }}>
+                  <div>
+                    <div className="card-title">Registrar retiro</div>
+                    <div className="card-subtitle">Crea un registro en pie_retiros</div>
+                  </div>
+                  <button className="button ghost" onClick={() => setRetiroOpen(false)}>✕ Cerrar</button>
                 </div>
-                <button className="button ghost" onClick={() => setRetiroOpen(false)}>✕ Cerrar</button>
+
+                <div style={{ padding: '0 24px 24px' }}>
+                  <form className="form-grid" onSubmit={handleCrearRetiro}>
+                    <div className="form-group full">
+                      <label className="form-label">Motivo</label>
+                      <input
+                        className="form-input"
+                        placeholder="Describe el motivo del retiro..."
+                        value={retiroForm.motivo}
+                        onChange={(e) => setRetiroForm((p) => ({ ...p, motivo: e.target.value }))}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Tipo</label>
+                      <select
+                        className="form-select"
+                        value={retiroForm.tipo}
+                        onChange={(e) => setRetiroForm((p) => ({ ...p, tipo: e.target.value }))}
+                      >
+                        <option value="retiro">retiro</option>
+                        <option value="apoyo">apoyo</option>
+                      </select>
+                    </div>
+
+                    <div className="form-actions" style={{ justifyContent: 'flex-end' }}>
+                      <button className="button primary" type="submit">Guardar</button>
+                    </div>
+                  </form>
+                </div>
               </div>
-
-              <form className="form-grid" onSubmit={handleCrearRetiro}>
-                <div className="form-group full">
-                  <label className="form-label">Motivo</label>
-                  <input
-                    className="form-input"
-                    placeholder="Describe el motivo del retiro..."
-                    value={retiroForm.motivo}
-                    onChange={(e) => setRetiroForm((p) => ({ ...p, motivo: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Tipo</label>
-                  <select
-                    className="form-select"
-                    value={retiroForm.tipo}
-                    onChange={(e) => setRetiroForm((p) => ({ ...p, tipo: e.target.value }))}
-                  >
-                    <option value="retiro">retiro</option>
-                    <option value="apoyo">apoyo</option>
-                  </select>
-                </div>
-
-                <div className="form-actions">
-                  <button className="button primary" type="submit">Guardar</button>
-                </div>
-              </form>
             </div>
           )}
         </div>
