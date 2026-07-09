@@ -252,10 +252,39 @@ export async function getAlertasAlumnoPie(alumnoId) {
     .from('v_alertas')
     .select('*')
     .eq('alumno_id', alumnoId)
-    .limit(1)
 
   if (error) return { data: null, error }
-  return { data: Array.isArray(data) ? data[0] ?? null : data, error: null }
+  if (!data || data.length === 0) return { data: null, error: null }
+
+  const promedio_general = data.reduce((sum, row) => sum + (Number(row.promedio_general) || 0), 0) / data.length
+  const porcentaje_asistencia = data.reduce((sum, row) => sum + (Number(row.porcentaje_asistencia) || 0), 0) / data.length
+  const alerta_promedio = data.some((row) => row.alerta_promedio === true)
+  const alerta_asistencia = data.some((row) => row.alerta_asistencia === true)
+  const alerta_conducta = data.some((row) => row.alerta_conducta === true)
+
+  // Usar el conteo real de anotaciones negativas en lugar del total de filas de la vista.
+  // Contar cualquier anotación que no sea positiva, para cubrir tipos distintos a 'negativa'.
+  const { data: anotData, error: anotError } = await supabase
+    .from('anotaciones')
+    .select('id')
+    .eq('alumno_id', alumnoId)
+    .not('tipo', 'ilike', 'positiva')
+
+  const anotaciones_negativas = anotError ?
+    data.reduce((sum, row) => sum + (Number(row.anotaciones_negativas) || 0), 0) :
+    (anotData?.length ?? 0)
+
+  return {
+    data: {
+      promedio_general: Number(promedio_general.toFixed(2)),
+      porcentaje_asistencia: Number(porcentaje_asistencia.toFixed(1)),
+      anotaciones_negativas,
+      alerta_promedio,
+      alerta_asistencia,
+      alerta_conducta,
+    },
+    error: null,
+  }
 }
 
 

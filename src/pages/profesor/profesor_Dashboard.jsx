@@ -20,10 +20,18 @@ import {
   crearAnotacion,
   crearRetiro,
   getProfesorAlumnoPieObservaciones,
-  getRetirosPiePorAlumno,
+  getProfesorAlumnoPieRetiros,
   getHistorialAsistenciaProfesor,
 } from '../../services/profesorService'
 import { getHorariosProfesor } from '../../services/horarioService'
+import {
+  getCursos,
+  getAsignaturas,
+  getUsuarios,
+  crearCurso,
+  crearAsignatura,
+  cambiarCursoAlumno,
+} from '../../services/adminService'
 
 const hoy = new Date().toISOString().slice(0, 10)
 
@@ -43,6 +51,14 @@ export default function ProfesorDashboard({ profile }) {
   const [alertas, setAlertas] = useState([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState(null)
+
+  const [cursosDisponibles, setCursosDisponibles] = useState([])
+  const [asignaturasDisponibles, setAsignaturasDisponibles] = useState([])
+  const [alumnosGestion, setAlumnosGestion] = useState([])
+  const [cursoForm, setCursoForm] = useState({ nivel: '', letra: '' })
+  const [asigForm, setAsigForm] = useState({ nombre: '' })
+  const [gestionAlumnoId, setGestionAlumnoId] = useState('')
+  const [gestionCursoId, setGestionCursoId] = useState('')
 
   const [cursoId, setCursoId] = useState('')
   const [asignaturaId, setAsignaturaId] = useState('')
@@ -204,16 +220,13 @@ export default function ProfesorDashboard({ profile }) {
         return
       }
       setLoadingRetirosHist(true)
-      const { data, error } = await getRetirosPiePorAlumno({
-        alumnoId: retiroForm.alumnoId,
-        cursoId: cursoId || undefined,
-      })
+      const { data, error } = await getProfesorAlumnoPieRetiros({ alumnoId: retiroForm.alumnoId })
       if (!error) setRetirosHist(data ?? [])
       else setRetirosHist([])
       setLoadingRetirosHist(false)
     }
     run()
-  }, [retiroForm.alumnoId, cursoId])
+  }, [retiroForm.alumnoId])
 
   useEffect(() => {
     const run = async () => {
@@ -229,14 +242,20 @@ export default function ProfesorDashboard({ profile }) {
   const loadBase = async () => {
     setLoading(true)
 
-    const [ca, ev, an] = await Promise.all([
+    const [ca, ev, an, cursosRes, asignaturasRes, usuariosRes] = await Promise.all([
       getProfesorCursos(profile.id),
       getEvaluacionesProfesor(profile.id),
       getAnotacionesProfesor(profile.id),
+      getCursos(),
+      getAsignaturas(),
+      getUsuarios(),
     ])
     setCursoAsig(ca.data ?? [])
     setEvaluaciones(ev.data ?? [])
     setAnotaciones(an.data ?? [])
+    setCursosDisponibles(cursosRes?.data ?? [])
+    setAsignaturasDisponibles(asignaturasRes?.data ?? [])
+    setAlumnosGestion((usuariosRes?.data ?? []).filter(u => u.rol === 'alumno'))
     setLoading(false)
   }
 
@@ -332,6 +351,54 @@ export default function ProfesorDashboard({ profile }) {
     setTimeout(() => setStatus(null), 4000)
   }
 
+  const handleCrearCursoProfesor = async (e) => {
+    e.preventDefault()
+    if (!cursoForm.nivel || !cursoForm.letra) return notify('error', 'Completa nivel y letra.')
+    if (!/^[A-Za-z]+$/.test(cursoForm.letra)) return notify('error', 'La letra solo puede contener letras (A, B, C...).')
+
+    const { error } = await crearCurso({ ...cursoForm, actor: profile })
+    if (error) return notify('error', error.message.includes('unique') ? 'Ese curso ya existe.' : error.message)
+
+    notify('success', `Curso ${cursoForm.nivel}°${cursoForm.letra.toUpperCase()} creado.`)
+    setCursoForm({ nivel: '', letra: '' })
+    const { data } = await getCursos()
+    setCursosDisponibles(data ?? [])
+  }
+
+  const handleCrearAsignaturaProfesor = async (e) => {
+    e.preventDefault()
+    if (!asigForm.nombre.trim()) return notify('error', 'Escribe el nombre de la asignatura.')
+
+    const yaExiste = asignaturasDisponibles.some(a => a.nombre.toLowerCase() === asigForm.nombre.trim().toLowerCase())
+    if (yaExiste) return notify('error', `La asignatura "${asigForm.nombre}" ya existe.`)
+
+    const { error } = await crearAsignatura({ nombre: asigForm.nombre, actor: profile })
+    if (error) return notify('error', error.message)
+
+    notify('success', `Asignatura "${asigForm.nombre}" creada.`)
+    setAsigForm({ nombre: '' })
+    const { data } = await getAsignaturas()
+    setAsignaturasDisponibles(data ?? [])
+  }
+
+  const handleCambiarCursoAlumnoProfesor = async (e) => {
+    e.preventDefault()
+    if (!gestionAlumnoId || !gestionCursoId) return notify('error', 'Selecciona un alumno y un curso.')
+
+    const alumno = alumnosGestion.find(a => a.id === gestionAlumnoId)
+    if (!alumno) return notify('error', 'No se encontró el alumno seleccionado.')
+    if (alumno.curso_id === gestionCursoId) return notify('error', 'El alumno ya está en ese curso.')
+
+    const { error } = await cambiarCursoAlumno({ alumnoId: gestionAlumnoId, cursoId: gestionCursoId, actor: profile })
+    if (error) return notify('error', error.message)
+
+    notify('success', 'Curso actualizado correctamente.')
+    setGestionAlumnoId('')
+    setGestionCursoId('')
+    const { data } = await getUsuarios()
+    setAlumnosGestion((data ?? []).filter(u => u.rol === 'alumno'))
+    if (cursoId) await handleCursoChange(cursoId)
+  }
 
   const handleGuardarNotas = async () => {
     if (!evalSelId) return notify('error', 'Selecciona una evaluación primero.')
@@ -696,6 +763,7 @@ export default function ProfesorDashboard({ profile }) {
           { key: 'asistencia', label: 'Asistencia' },
           { key: 'historial_asistencia', label: 'Historial Asistencia' },
           { key: 'horarios', label: 'Horarios' },
+          { key: 'gestion', label: 'Gestión' },
           { key: 'anotaciones', label: 'Anotaciones' },
           { key: 'retiros', label: 'Retiros' },
           { key: 'observacion', label: 'Observaciones' },
@@ -1104,6 +1172,142 @@ export default function ProfesorDashboard({ profile }) {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab: Gestión */}
+      {tab === 'gestion' && (
+        <div style={{ display: 'grid', gap: 20 }}>
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Gestión académica</div>
+                <div className="card-subtitle">Cambia de curso a un alumno y crea cursos o asignaturas como en el panel admin.</div>
+              </div>
+            </div>
+
+            <div className="grid-2" style={{ gap: 20, alignItems: 'start' }}>
+              <div className="card" style={{ padding: 18 }}>
+                <div className="card-title">Cambiar curso de un alumno</div>
+                <form className="form-grid" onSubmit={handleCambiarCursoAlumnoProfesor}>
+                  <div className="form-group">
+                    <label className="form-label">Alumno</label>
+                    <select
+                      className="form-select"
+                      value={gestionAlumnoId}
+                      onChange={(e) => {
+                        const nextValue = e.target.value
+                        setGestionAlumnoId(nextValue)
+                        const alumno = alumnosGestion.find(a => a.id === nextValue)
+                        setGestionCursoId(alumno?.curso_id ?? '')
+                      }}
+                      required
+                    >
+                      <option value="">Selecciona un alumno</option>
+                      {alumnosGestion.map(a => (
+                        <option key={a.id} value={a.id}>
+                          {a.nombre}{a.cursos ? ` (${a.cursos.nivel}°${a.cursos.letra})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Curso nuevo</label>
+                    <select
+                      className="form-select"
+                      value={gestionCursoId}
+                      onChange={(e) => setGestionCursoId(e.target.value)}
+                      required
+                    >
+                      <option value="">Selecciona un curso</option>
+                      {cursosDisponibles.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.nivel}°{c.letra}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-actions">
+                    <button className="button primary" type="submit">Guardar cambio de curso</button>
+                  </div>
+                </form>
+              </div>
+
+              <div style={{ display: 'grid', gap: 20 }}>
+                <div className="card" style={{ padding: 18 }}>
+                  <div className="card-title">Crear curso</div>
+                  <form className="form-grid" onSubmit={handleCrearCursoProfesor}>
+                    <div className="form-group">
+                      <label className="form-label">Nivel</label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min="1"
+                        max="8"
+                        placeholder="Ej: 4"
+                        value={cursoForm.nivel}
+                        onChange={(e) => setCursoForm(p => ({ ...p, nivel: e.target.value }))}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Letra</label>
+                      <input
+                        className="form-input"
+                        maxLength="2"
+                        placeholder="Ej: A"
+                        value={cursoForm.letra}
+                        onChange={(e) => setCursoForm(p => ({ ...p, letra: e.target.value }))}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-actions">
+                      <button className="button primary" type="submit">Crear curso</button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="card" style={{ padding: 18 }}>
+                  <div className="card-title">Crear asignatura</div>
+                  <form className="form-grid" onSubmit={handleCrearAsignaturaProfesor}>
+                    <div className="form-group full">
+                      <label className="form-label">Nombre</label>
+                      <input
+                        className="form-input"
+                        placeholder="Ej: Matemática"
+                        value={asigForm.nombre}
+                        onChange={(e) => setAsigForm(p => ({ ...p, nombre: e.target.value }))}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group full">
+                      <label className="form-label">Asignaturas disponibles</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {asignaturasDisponibles.length > 0 ? (
+                          asignaturasDisponibles.map((a) => (
+                            <span key={a.id} className="badge default">
+                              {a.nombre}
+                            </span>
+                          ))
+                        ) : (
+                          <span style={{ color: 'var(--muted)', fontSize: '.85rem' }}>No hay asignaturas registradas aún.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="form-actions">
+                      <button className="button primary" type="submit">Crear asignatura</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
